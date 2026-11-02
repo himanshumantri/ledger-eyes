@@ -25,6 +25,17 @@ def test_unknown_or_ambiguous_location_is_none():
     assert resolve_location("no location said", LOCATIONS) is None
 
 
+def test_a_letter_spaced_from_its_number_still_counts():
+    # Real transcripts from the 9.5-minute run: after the first few turns the model wrote "A 1 B 4".
+    assert resolve_location("this is shelf A 1 B 4 with three monitors and two keyboards", SHELVES) == "A1-B4"
+    assert resolve_location("this is shelf A 4 B 1 with four monitors seven keyboards two mouse", SHELVES) == "A4-B1"
+    assert resolve_location("thisthis is shelf A 3 B 1 with three monitors", SHELVES) == "A3-B1"
+    assert resolve_location("this is shelf A 1 B 2 1 B 2 with four monitors", SHELVES) == "A1-B2"
+    # the article "a" is only a tag inside a location phrase
+    assert resolve_location("shelf A1 B2 with a four seater", SHELVES) == "A1-B2"
+    assert spoken_location("we have a one metre shelf") == {}
+
+
 def test_item_counts_said_after_the_location_are_not_location_numbers():
     # Real transcripts from the held-out set: "four" in "four monitors" once resolved a clip to A1-B4.
     assert resolve_location("this is is shelf A1 B2 with four monitors.", SHELVES) == "A1-B2"
