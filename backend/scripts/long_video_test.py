@@ -34,15 +34,17 @@ PARTS = [f"Fresh {n}.mp4" for n in range(1, 6)]
 def build(repeat: int, target: Path) -> None:
     """Re-encode every part to the same size and frame rate so they can be joined; audio is kept (it holds the narration)."""
     inputs = [TESTDATA / p for p in PARTS] * repeat
+    partial = target.with_name(target.stem + ".partial.mp4")
     cmd = ["ffmpeg", "-v", "error", "-y"]
     for p in inputs:
         cmd += ["-i", str(p)]
     chains = "".join(f"[{i}:v]scale=576:1024,setsar=1,fps=30[v{i}];[{i}:a]aresample=16000,aformat=channel_layouts=mono[a{i}];" for i in range(len(inputs)))
     joined = "".join(f"[v{i}][a{i}]" for i in range(len(inputs)))
     cmd += ["-filter_complex", f"{chains}{joined}concat=n={len(inputs)}:v=1:a=1[v][a]", "-map", "[v]", "-map", "[a]",
-            "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", "-c:a", "aac", "-b:a", "64k", str(target)]
+            "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", "-c:a", "aac", "-b:a", "64k", str(partial)]
     print(f"joining {len(inputs)} clips ...")
     subprocess.run(cmd, check=True)
+    partial.replace(target)  # only a finished video gets the real name, so an interrupted join cannot be mistaken for one
 
 
 def stage(label: str, fn):
@@ -70,6 +72,9 @@ def main() -> None:
     args = ap.parse_args()
 
     video = TESTDATA / f"Long test {args.repeat}x.mp4"
+    if video.exists() and duration_seconds(video) is None:
+        print(f"{video.name} is incomplete (an earlier join was interrupted); building it again")
+        video.unlink()
     if not video.exists():
         build(args.repeat, video)
     length = duration_seconds(video)
