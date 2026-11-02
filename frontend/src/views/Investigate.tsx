@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  API, addClick, deleteObject, drawBox, getInvestigations, patchObject, resolveInvestigation, startInvestigation,
-  type Clip, type Corner, type Investigation, type Plan,
+  API, deleteObject, drawBox, getInvestigations, patchObject, resolveInvestigation, startInvestigation,
+  type Clip, type Corner, type InvObject, type Investigation, type Plan,
 } from '../api'
 import { whoProblem, type Who } from '../roles'
 
-type Mode = { kind: 'click' } | { kind: 'draw' } | { kind: 'redraw'; id: number }
+type Mode = { kind: 'add' } | { kind: 'redraw'; id: number }
 const MIN_SIDE = 12 // image pixels; corners closer than this are a slip, not a carton
-const CORNER_WORDS = ['first', 'second', 'third', 'fourth']
 
 /** Work on a clip's frame: include or exclude proposed cartons, redraw or delete a wrong one, add one it missed, say which item each is. */
 export default function Investigate({ clip, plan, who, onResolved }: { clip: Clip; plan: Plan; who: Who; onResolved: () => void }) {
@@ -17,7 +16,8 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [mode, setMode] = useState<Mode | null>(null)
-  const [corners, setCorners] = useState<Corner[]>([])
+  const [corners, setCorners] = useState<Corner[]>([]) // the top-left corner, then the bottom-right one
+  const [hover, setHover] = useState<Corner | null>(null)
   const img = useRef<HTMLImageElement>(null)
 
   useEffect(() => {
@@ -52,6 +52,7 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
   function stop() {
     setMode(null)
     setCorners([])
+    setHover(null)
   }
 
   if (!inv) {
@@ -89,42 +90,47 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
   const book = (item: string) => plan.lines.find((l) => l.location === inv.location && l.item === item)?.book_qty ?? 0
   const shown = [...new Set([...items, ...Object.keys(inv.counts.per_item)])]
   const open = inv.status === 'open'
+  const marked = (o: InvObject) => o.source !== 'auto' || !!o.adjusted // a box the reviewer drew: its confidence is not meaningful
 
-  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (!mode || !img.current || !inv || busy) return
+  function toImage(e: React.PointerEvent<HTMLDivElement>): Corner | null {
+    if (!img.current || !inv) return null
     const r = img.current.getBoundingClientRect()
     const at = (v: number, size: number, shownSize: number) => Math.min(size - 1, Math.max(0, Math.round((v / shownSize) * size)))
-    const point = { x: at(e.clientX - r.left, inv.frame_w, r.width), y: at(e.clientY - r.top, inv.frame_h, r.height) }
-    if (mode.kind === 'click') {
-      stop()
-      void run(() => addClick(inv.id, point.x, point.y))
+    return { x: at(e.clientX - r.left, inv.frame_w, r.width), y: at(e.clientY - r.top, inv.frame_h, r.height) }
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (mode && corners.length === 1) setHover(toImage(e))
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    const point = toImage(e)
+    if (!mode || !point || !inv || busy) return
+    if (corners.length === 0) {
+      setCorners([point])
       return
     }
-    const next = [...corners, point]
-    if (next.length < 4) {
-      setCorners(next)
-      return
-    }
-    // Four corners in: the box that holds them goes to SAM, which outlines the carton inside it.
-    const xs = next.map((c) => c.x)
-    const ys = next.map((c) => c.y)
-    const box: [number, number, number, number] = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
+    // Two corners in: the box between them goes to SAM, which outlines the carton inside it.
+    const both = [corners[0], point]
+    const box: [number, number, number, number] = [
+      Math.min(both[0].x, both[1].x), Math.min(both[0].y, both[1].y), Math.max(both[0].x, both[1].x), Math.max(both[0].y, both[1].y),
+    ]
     if (box[2] - box[0] < MIN_SIDE || box[3] - box[1] < MIN_SIDE) {
       setCorners([])
-      setError('Those corners are too close together. Click the four corners of the whole carton.')
+      setHover(null)
+      setError('Those two corners are too close together. Click the top-left and then the bottom-right corner of the carton.')
       return
     }
     const target = mode.kind === 'redraw' ? mode.id : undefined
     stop()
-    void run(() => drawBox(inv.id, box, next, target))
+    void run(() => drawBox(inv.id, box, both, target))
   }
 
-  const instruction =
-    mode?.kind === 'click'
-      ? 'Click the carton on the picture.'
-      : mode
-        ? `${mode.kind === 'redraw' ? `Redrawing carton ${mode.id}: ` : ''}click the ${CORNER_WORDS[corners.length]} corner of the carton (${corners.length} of 4 placed).`
-        : ''
+  const instruction = `${mode?.kind === 'redraw' ? `Redrawing carton ${mode.id}. ` : ''}${corners.length === 0 ? 'Click the top-left corner of the carton.' : 'Now click the bottom-right corner.'}`
+  const preview =
+    corners.length === 1 && hover
+      ? { x: Math.min(corners[0].x, hover.x), y: Math.min(corners[0].y, hover.y), w: Math.abs(hover.x - corners[0].x), h: Math.abs(hover.y - corners[0].y) }
+      : null
 
   return (
     <div className="investigate">
@@ -134,22 +140,18 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
         Use Redraw if a box is wrong and Delete if it is not a carton at all.
       </p>
       {inv.capped && <p className="warn">It outlined its maximum of 16 cartons, so more may exist. Add any it missed.</p>}
-      <div className={`frame${mode ? ' placing' : ''}`} onPointerDown={onPointerDown}>
+      <div className={`frame${mode ? ' placing' : ''}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove}>
         <img ref={img} src={`${API}/investigations/${inv.id}/frame`} alt="The clip's frame with the proposed cartons outlined" />
         <svg viewBox={`0 0 ${inv.frame_w} ${inv.frame_h}`} preserveAspectRatio="none" aria-hidden="true">
           {inv.objects.map((o) => (
-            <g key={o.id} className={`obj ${o.source} ${o.included ? 'in' : 'out'}${o.included && o.conf < 0.8 ? ' weak' : ''}${mode?.kind === 'redraw' && mode.id === o.id ? ' target' : ''}`}>
+            <g key={o.id} className={`obj ${o.source} ${o.included ? 'in' : 'out'}${o.included && o.conf < 0.8 && !marked(o) ? ' weak' : ''}${mode?.kind === 'redraw' && mode.id === o.id ? ' target' : ''}`}>
               <rect x={o.box[0]} y={o.box[1]} width={o.box[2] - o.box[0]} height={o.box[3] - o.box[1]} />
               <text x={o.box[0] + 6} y={o.box[1] + 22}>{o.id}</text>
             </g>
           ))}
-          {corners.length > 1 && <polyline className="draft" points={corners.map((c) => `${c.x},${c.y}`).join(' ')} />}
-          {corners.length === 4 && <polygon className="draft" points={corners.map((c) => `${c.x},${c.y}`).join(' ')} />}
+          {preview && <rect className="draft" x={preview.x} y={preview.y} width={preview.w} height={preview.h} />}
           {corners.map((c, i) => (
-            <g key={i} className="vertex">
-              <circle cx={c.x} cy={c.y} r={9} />
-              <text x={c.x + 12} y={c.y - 8}>{i + 1}</text>
-            </g>
+            <circle key={i} className="vertex" cx={c.x} cy={c.y} r={9} />
           ))}
         </svg>
       </div>
@@ -158,13 +160,12 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
           {mode ? (
             <>
               {instruction}{' '}
-              {corners.length > 0 && <button onClick={() => setCorners(corners.slice(0, -1))}>Undo last corner</button>}{' '}
+              {corners.length > 0 && <button onClick={() => { setCorners([]); setHover(null) }}>Undo corner</button>}{' '}
               <button onClick={stop}>Cancel</button>
             </>
           ) : (
             <>
-              <button disabled={busy} onClick={() => begin({ kind: 'draw' })}>Add a carton: click its 4 corners</button>{' '}
-              <button disabled={busy} onClick={() => begin({ kind: 'click' })}>Add a carton: click its middle</button>
+              <button disabled={busy} onClick={() => begin({ kind: 'add' })}>Add a carton</button>
             </>
           )}
         </p>
@@ -206,7 +207,7 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
                   ))}
                 </select>
               </td>
-              <td className="num">{o.conf.toFixed(2)}</td>
+              <td className="num">{marked(o) ? 'you marked it' : o.conf.toFixed(2)}</td>
               <td className="actions">
                 <button disabled={!open || busy || !!mode} onClick={() => begin({ kind: 'redraw', id: o.id })}>
                   Redraw
@@ -250,7 +251,7 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
         </tbody>
       </table>
       {inv.counts.unassigned > 0 && <p className="warn">{inv.counts.unassigned} counted carton(s) still need an item.</p>}
-      <p className="hint">This is what is visible in this one picture. Cartons hidden behind others are not counted.</p>
+      <p className="hint">Mark only the part you can see. Count a carton if more than half of it is visible. Cartons hidden behind others are not counted.</p>
       {open && (
         <div className="review">
           <label>

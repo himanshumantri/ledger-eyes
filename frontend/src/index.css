@@ -508,31 +508,11 @@ input[aria-invalid='true'] {
   }
 }
 
-polyline.draft,
-polygon.draft {
-  fill: rgba(31, 111, 235, 0.12);
-  stroke: var(--accent);
-  stroke-width: 2;
-  vector-effect: non-scaling-stroke;
-}
-
-polyline.draft {
-  fill: none;
-}
-
-.vertex circle {
+.vertex {
   fill: var(--accent);
   stroke: #fff;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
-}
-
-.vertex text {
-  fill: #fff;
-  paint-order: stroke;
-  stroke: #000;
-  stroke-width: 3px;
-  font-size: 22px;
 }
 
 td.actions {
