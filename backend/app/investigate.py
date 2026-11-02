@@ -1,7 +1,7 @@
 """Investigate a variance: a reviewer works on one clip's frame with SAM's help and records a count.
 
 SAM proposes cartons from a text phrase; the reviewer includes or excludes each one, clicks a carton SAM missed
-(a point prompt), and says which item each carton is. Resolving as "confirmed" writes the per-item counts as a
+(a point prompt) or draws a box round it (a box prompt), redraws a box SAM got wrong, and says which item each carton is. Resolving as "confirmed" writes the per-item counts as a
 review, so they flow into the reconciliation like any other reviewer decision. Every action is appended to an
 event log, and the clip's machine count is kept, so the final number can be traced back to what the models said.
 """
@@ -23,7 +23,7 @@ from app.files import restore_blob
 from app.jobs import book_lines
 from app.media import extract_frame
 from app.roles import require_not_capturer
-from app.sam_still import point_prompt
+from app.sam_still import box_prompt, point_prompt
 from app.segmentation import parse_sam_output
 from app.tables import Clip, Investigation, InvestigationEvent, Review
 
@@ -31,7 +31,8 @@ Segmenter = Callable[[Path, str], str]
 AUTO_PHRASE = "cardboard box"
 MIN_CONF = 0.8  # the cutoff the counting pipeline uses; weaker proposals are shown but start excluded
 SAM_LIMIT = 16  # SAM returns at most this many objects per request
-CLICK_ID_START = 100
+CLICK_ID_START = 100  # ids from here up belong to cartons the reviewer added (clicked or drawn); lower ids are SAM's own
+MIN_BOX = 8  # pixels; a smaller drawn box is a stray click
 
 
 class StartIn(BaseModel):
@@ -42,6 +43,11 @@ class StartIn(BaseModel):
 class ClickIn(BaseModel):
     x: int
     y: int
+
+
+class BoxIn(BaseModel):
+    box: list[int] = Field(min_length=4, max_length=4)  # x1, y1, x2, y2 in frame pixels, as the reviewer drew it
+    object_id: int | None = None  # redraw this object's box; without it, add a new carton
 
 
 class ObjectPatch(BaseModel):
@@ -81,6 +87,10 @@ def counts(inv: Investigation) -> dict:
             else:
                 unassigned += 1
     return {"per_item": per_item, "unassigned": unassigned}
+
+
+def next_added_id(inv: Investigation) -> int:
+    return max([o["id"] for o in inv.objects if o["id"] >= CLICK_ID_START], default=CLICK_ID_START - 1) + 1
 
 
 def inv_json(s: Session, inv: Investigation) -> dict:
@@ -172,13 +182,45 @@ def create_investigation_router(sessions: sessionmaker[Session], uploads: Path, 
             raise HTTPException(404, "The frame for this investigation is no longer available")
         found = parse_sam_output(segment(frame, point_prompt(body.x, body.y, inv.frame_w, inv.frame_h))).get(0, [])
         if not found:
-            raise HTTPException(422, "SAM found no object at that point")
+            raise HTTPException(422, "No carton was found at that point")
         d = found[0]
-        new_id = max([o["id"] for o in inv.objects if o["source"] == "click"], default=CLICK_ID_START - 1) + 1
+        new_id = next_added_id(inv)
         clip = s.get(Clip, inv.clip_id)
         obj = {"id": new_id, "source": "click", "box": [d.x1, d.y1, d.x2, d.y2], "conf": round(d.conf, 3), "included": True, "item": clip.item, "click": [body.x, body.y]}
         inv.objects = [*inv.objects, obj]
         log(s, inv, "click_added", object=new_id, x=body.x, y=body.y, box=obj["box"], conf=obj["conf"])
+        s.commit()
+        return inv_json(s, inv)
+
+    @router.post("/investigations/{inv_id}/boxes")
+    def draw_box(inv_id: str, body: BoxIn, s: Session = Depends(db)) -> dict:
+        """The reviewer draws a box round a carton and SAM outlines the carton inside it. That replaces the box of an
+        existing object (its item and whether it is counted stay as they were), or adds a new carton."""
+        inv = get_open(s, inv_id)
+        x1, y1, x2, y2 = body.box
+        if not (0 <= x1 < x2 <= inv.frame_w and 0 <= y1 < y2 <= inv.frame_h):
+            raise HTTPException(422, "That box is outside the frame")
+        if x2 - x1 < MIN_BOX or y2 - y1 < MIN_BOX:
+            raise HTTPException(422, "That box is too small; drag it around the whole carton")
+        if body.object_id is not None and not any(o["id"] == body.object_id for o in inv.objects):
+            raise HTTPException(404, "No such object")
+        frame = restore_blob(s, out, inv.frame)
+        if frame is None:
+            raise HTTPException(404, "The frame for this investigation is no longer available")
+        found = parse_sam_output(segment(frame, box_prompt(x1, y1, x2, y2, inv.frame_w, inv.frame_h))).get(0, [])
+        if not found:
+            raise HTTPException(422, "No carton was found in that box; draw it a little larger, or click the carton instead")
+        d = max(found, key=lambda f: f.conf)
+        new_box, conf = [d.x1, d.y1, d.x2, d.y2], round(d.conf, 3)
+        if body.object_id is None:
+            clip = s.get(Clip, inv.clip_id)
+            obj = {"id": next_added_id(inv), "source": "drawn", "box": new_box, "conf": conf, "included": True, "item": clip.item, "click": None}
+            inv.objects = [*inv.objects, obj]
+            log(s, inv, "box_added", object=obj["id"], drawn=body.box, box=new_box, conf=conf)
+        else:
+            before = next(o for o in inv.objects if o["id"] == body.object_id)["box"]
+            inv.objects = [{**o, "box": new_box, "conf": conf, "adjusted": True} if o["id"] == body.object_id else o for o in inv.objects]
+            log(s, inv, "box_redrawn", object=body.object_id, was=before, drawn=body.box, box=new_box, conf=conf)
         s.commit()
         return inv_json(s, inv)
 

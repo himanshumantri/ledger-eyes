@@ -256,6 +256,21 @@ figcaption {
   font-size: 0.85rem;
 }
 
+.legend {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
 .review {
   display: grid;
   gap: 8px;
@@ -301,6 +316,7 @@ figcaption {
 .frame.placing {
   cursor: crosshair;
   outline: 2px solid var(--accent);
+  touch-action: none; /* a finger drag draws the box instead of scrolling the page */
 }
 
 .frame img {
@@ -342,9 +358,23 @@ figcaption {
   opacity: 0.8;
 }
 
-.obj.click rect {
+.obj.click rect,
+.obj.drawn rect {
   stroke: var(--accent);
   stroke-dasharray: none;
+}
+
+.obj.target rect {
+  stroke-width: 1;
+  opacity: 0.5;
+}
+
+rect.draft {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
 }
 
 .roles {
