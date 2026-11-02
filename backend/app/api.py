@@ -14,10 +14,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import MAX_UPLOAD_MB, MAX_VIDEO_SECONDS, OUT
+from app.config import MAX_UPLOAD_MB, MAX_VIDEO_FRAMES, MAX_VIDEO_SECONDS, OUT
 from app.files import restore_blob
 from app.jobs import Runner, book_lines, build_preview, process_clip
-from app.media import duration_seconds, make_preview
+from app.media import duration_seconds, frame_count, make_preview
 from app.ranged import ranged_file
 from app.reconcile import ClipResult, ReviewLine, Row, parse_book, reconcile, write_reports
 from app.roles import label, require_not_capturer
@@ -63,7 +63,7 @@ def preview_state(c: Clip) -> str:
 def clip_json(s: Session, c: Clip) -> dict:
     review = latest_review(s, c.id)
     return {
-        "id": c.id, "captured_by": c.captured_by, "captured_by_id": c.captured_by_id, "original_name": c.original_name, "sha256": c.sha256, "size_bytes": c.size_bytes,
+        "id": c.id, "captured_by": c.captured_by, "captured_by_id": c.captured_by_id, "original_name": c.original_name, "sha256": c.sha256, "size_bytes": c.size_bytes, "duration_seconds": c.duration_seconds,
         "uploaded_at": _iso(c.uploaded_at), "finished_at": _iso(c.finished_at), "status": c.status, "error": c.error,
         "location": c.review_location or c.location, "narrated_location": c.location, "item": c.item,
         "machine_count": c.counted, "needs_review": c.needs_review, "reasons": c.reasons,
@@ -157,11 +157,19 @@ def create_router(sessions: sessionmaker[Session], uploads: Path, runner: Runner
         if client_sha256 and client_sha256.lower() != digest.hexdigest():
             path.unlink(missing_ok=True)
             raise HTTPException(422, "The video changed in transit: its hash does not match the one the device sent")
-        length = duration_seconds(path)
+        length, frames = duration_seconds(path), frame_count(path)
         if length is not None and length > MAX_VIDEO_SECONDS:
             path.unlink(missing_ok=True)
             raise HTTPException(422, f"Videos can be at most {MAX_VIDEO_SECONDS // 60} minutes; this one is {length / 60:.1f}. Film one aisle at a time, at 720p.")
-        clip = Clip(id=clip_id, filename=name, original_name=file.filename or name, sha256=digest.hexdigest(), size_bytes=size, captured_by=(captured_by or "").strip() or None, captured_by_id=(captured_by_id or "").strip()[:100] or None)
+        if frames is not None and frames > MAX_VIDEO_FRAMES:
+            path.unlink(missing_ok=True)
+            raise HTTPException(
+                422,
+                f"This video has {frames:,} frames and the counting model takes at most {MAX_VIDEO_FRAMES:,}. "
+                f"At 30 frames per second that is {MAX_VIDEO_FRAMES / 30 / 60:.1f} minutes; a phone filming at 60 frames per second reaches it in half the time. "
+                "Set the camera to 30 fps and 720p, or film a shorter stretch.",
+            )
+        clip = Clip(id=clip_id, filename=name, original_name=file.filename or name, sha256=digest.hexdigest(), size_bytes=size, duration_seconds=length, captured_by=(captured_by or "").strip() or None, captured_by_id=(captured_by_id or "").strip()[:100] or None)
         s.add(clip)
         s.commit()
         background.add_task(process_clip, sessions, clip_id, uploads, runner, out)

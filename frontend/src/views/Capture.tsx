@@ -73,7 +73,7 @@ export default function CaptureView({
           Say the location first, for example <em>"Aisle A1, shelf B2"</em>, then the item names.
         </li>
         <li>Keep every carton in view and do not cover labels.</li>
-        <li>A video can be up to 2 minutes. Film at 720p so a long video stays small enough to upload.</li>
+        <li>A video can be up to 8 minutes, filmed at 30 frames per second (a phone set to 60 fps reaches the limit in 4 minutes). Film at 720p so a long video stays small enough to upload. Counting takes about one and a half times the length of the video.</li>
       </ol>
       <input
         type="file"
@@ -113,8 +113,9 @@ export default function CaptureView({
                   <span />
                 </div>
                 <p className="hint">
-                  {live.original_name} · {minutes(now - new Date(live.uploaded_at).getTime())} so far. This can take a minute or two. You can hide
-                  this; the count carries on.
+                  {live.original_name} · {minutes(now - new Date(live.uploaded_at).getTime())} so far.
+                  {live.duration_seconds ? ` Counting takes about ${minutes(live.duration_seconds * 1000 * 1.5 + 60000)} for a video this long (measured: about 1.4 times its length, plus a minute for the narration).` : ' This can take a minute or two.'}{' '}
+                  You can hide this; the count carries on.
                 </p>
                 <button onClick={() => setHidden(true)}>Hide this</button>
               </>

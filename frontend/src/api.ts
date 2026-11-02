@@ -9,6 +9,7 @@ export type Clip = {
   captured_by_id: string | null
   sha256: string
   size_bytes: number
+  duration_seconds: number | null
   uploaded_at: string
   finished_at: string | null
   status: 'queued' | 'running' | 'done' | 'failed'

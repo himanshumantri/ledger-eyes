@@ -137,11 +137,11 @@ def test_unknown_clip_is_404(client):
 
 def test_a_video_over_the_length_cap_is_refused_and_not_kept(client, tmp_path, monkeypatch):
     put_plan(client)
-    monkeypatch.setattr("app.api.duration_seconds", lambda path: 121.0)
+    monkeypatch.setattr("app.api.duration_seconds", lambda path: 481.0)
     res = upload(client)
-    assert res.status_code == 422 and "at most 2 minutes" in res.json()["detail"]
+    assert res.status_code == 422 and "at most 8 minutes" in res.json()["detail"]
     assert list((tmp_path / "uploads").glob("*")) == []
-    monkeypatch.setattr("app.api.duration_seconds", lambda path: 120.0)
+    monkeypatch.setattr("app.api.duration_seconds", lambda path: 480.0)
     assert upload(client).status_code == 201
     monkeypatch.setattr("app.api.duration_seconds", lambda path: None)  # unreadable length: the pipeline decides
     assert upload(client).status_code == 201
@@ -180,3 +180,29 @@ def test_a_playable_copy_that_cannot_be_made_does_not_touch_the_count(client, ru
     clip = client.get(f"/clips/{upload(client).json()['id']}").json()
     assert clip["status"] == "done" and clip["machine_count"] == 4 and clip["preview"] == "none"
     assert client.get(f"/clips/{clip['id']}/preview").status_code == 404
+
+
+def test_a_video_with_too_many_frames_for_the_counting_model_is_refused(client, tmp_path, monkeypatch):
+    put_plan(client)
+    monkeypatch.setattr("app.api.duration_seconds", lambda path: 300.0)  # a 5-minute video, but filmed at 60 frames per second
+    monkeypatch.setattr("app.api.frame_count", lambda path: 18000)
+    res = upload(client)
+    assert res.status_code == 422 and "18,000 frames" in res.json()["detail"] and "at most 14,000" in res.json()["detail"]
+    assert list((tmp_path / "uploads").glob("*")) == []
+    monkeypatch.setattr("app.api.frame_count", lambda path: 14000)
+    created = upload(client)
+    assert created.status_code == 201 and created.json()["duration_seconds"] == 300.0
+
+
+def test_frames_and_length_are_read_from_a_real_video(tmp_path):
+    import shutil
+    import subprocess
+
+    from app.media import duration_seconds, frame_count
+
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is not installed")
+    video = tmp_path / "t.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=2:size=64x64:rate=30", str(video)], check=True)
+    assert frame_count(video) == 60 and round(duration_seconds(video)) == 2
+    assert frame_count(tmp_path / "missing.mp4") is None

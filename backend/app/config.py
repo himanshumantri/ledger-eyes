@@ -15,7 +15,10 @@ OUT = TESTDATA / "out"  # cached raw model output, so reruns need no API call
 UPLOADS = Path(os.environ.get("UPLOAD_DIR", TESTDATA / "uploads"))
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{(TESTDATA / 'ledgereyes.db').as_posix()}")
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "500"))
-MAX_VIDEO_SECONDS = int(os.environ.get("MAX_VIDEO_SECONDS", "120"))  # only 12-29 second clips are proven; raise this when long_video_test.py passes at a longer length
+# SAM refuses a video of more than 15,000 frames ("found at least 17101" for 9.5 minutes at 30 fps) and took 14,658 frames (8.1 minutes)
+# in 671 s. The limit is frames, so a phone filming at 60 fps reaches it in half the time; both are checked on upload.
+MAX_VIDEO_FRAMES = int(os.environ.get("MAX_VIDEO_FRAMES", "14000"))
+MAX_VIDEO_SECONDS = int(os.environ.get("MAX_VIDEO_SECONDS", "480"))
 
 
 def auth_headers() -> dict:

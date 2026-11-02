@@ -31,6 +31,7 @@ class Clip(Base):
     original_name: Mapped[str] = mapped_column(String(300))
     sha256: Mapped[str] = mapped_column(String(64))
     size_bytes: Mapped[int]
+    duration_seconds: Mapped[float | None] = mapped_column(default=None)  # length of the video, when ffprobe could read it
     uploaded_at: Mapped[datetime] = mapped_column(default=_now, index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued")  # queued | running | done | failed
     error: Mapped[str] = mapped_column(String(2000), default="")

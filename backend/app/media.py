@@ -1,4 +1,5 @@
 """ffmpeg helpers. ffmpeg is a video tool, not a model."""
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -19,6 +20,22 @@ def duration_seconds(video: Path) -> float | None:
         )
         return float(done.stdout.strip())
     except (OSError, subprocess.CalledProcessError, ValueError):
+        return None
+
+
+def frame_count(video: Path) -> int | None:
+    """Number of video frames, from the container's own count or else length times frame rate; None when it cannot be read."""
+    try:
+        done = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=nb_frames,avg_frame_rate,duration", "-of", "json", str(video)],
+            capture_output=True, text=True, check=True,
+        )
+        stream = json.loads(done.stdout)["streams"][0]
+        if str(stream.get("nb_frames", "")).isdigit():
+            return int(stream["nb_frames"])
+        top, _, bottom = str(stream["avg_frame_rate"]).partition("/")
+        return round(float(stream["duration"]) * float(top) / float(bottom or 1))
+    except (OSError, subprocess.CalledProcessError, ValueError, KeyError, IndexError, ZeroDivisionError):
         return None
 
 
