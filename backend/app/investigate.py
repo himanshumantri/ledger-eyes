@@ -5,6 +5,7 @@ SAM proposes cartons from a text phrase; the reviewer includes or excludes each 
 review, so they flow into the reconciliation like any other reviewer decision. Every action is appended to an
 event log, and the clip's machine count is kept, so the final number can be traced back to what the models said.
 """
+import io
 import json
 import uuid
 from collections.abc import Callable
@@ -12,14 +13,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.files import restore_blob
+from app.files import restore_blob, save_blob
 from app.jobs import book_lines
 from app.media import extract_frame
 from app.roles import label, require_not_capturer
@@ -33,6 +34,8 @@ MIN_CONF = 0.8  # the cutoff the counting pipeline uses; weaker proposals are sh
 SAM_LIMIT = 16  # SAM returns at most this many objects per request
 CLICK_ID_START = 100  # ids from here up belong to cartons the reviewer added (clicked or drawn); lower ids are SAM's own
 MIN_BOX = 8  # pixels; a smaller drawn box is a stray click
+MAX_FRAME_BYTES = 8 * 1024 * 1024  # a paused frame sent from the browser
+MAX_FRAME_SIDE, MIN_FRAME_SIDE = 4096, 64
 
 
 class StartIn(BaseModel):
@@ -125,8 +128,7 @@ def create_investigation_router(sessions: sessionmaker[Session], uploads: Path, 
             raise HTTPException(409, "This investigation is resolved; start a new one to change the count")
         return inv
 
-    @router.post("/clips/{clip_id}/investigations", status_code=201)
-    def start(clip_id: str, body: StartIn, s: Session = Depends(db)) -> dict:
+    def checked_clip(s: Session, clip_id: str, body: StartIn) -> Clip:
         clip = s.get(Clip, clip_id)
         if clip is None:
             raise HTTPException(404, "No such clip")
@@ -135,7 +137,10 @@ def create_investigation_router(sessions: sessionmaker[Session], uploads: Path, 
         require_not_capturer(clip, body.reviewer, body.reviewer_id)
         if body.location is not None and body.location not in {b.location for b in book_lines(s)}:
             raise HTTPException(422, f"{body.location} is not a location in the book stock")
-        frame = frame_path(s, clip, uploads, out)
+        return clip
+
+    def open_investigation(s: Session, clip: Clip, body: StartIn, frame: Path, **how) -> dict:
+        """Ask SAM for the cartons on `frame` and open a session on it. `how` is what the reviewer picked, kept in the log."""
         with Image.open(frame) as im:
             w, h = im.size
         proposals = parse_sam_output(segment(frame, AUTO_PHRASE)).get(0, [])
@@ -144,13 +149,52 @@ def create_investigation_router(sessions: sessionmaker[Session], uploads: Path, 
             for d in proposals
         ]
         inv = Investigation(
-            id=uuid.uuid4().hex, clip_id=clip_id, reviewer=body.reviewer.strip(), reviewer_id=(body.reviewer_id or "").strip() or None, location=body.location or clip.review_location or clip.location,
+            id=uuid.uuid4().hex, clip_id=clip.id, reviewer=body.reviewer.strip(), reviewer_id=(body.reviewer_id or "").strip() or None, location=body.location or clip.review_location or clip.location,
             frame=frame.relative_to(out).as_posix(), frame_w=w, frame_h=h, machine_count=clip.counted, objects=objects,
         )
         s.add(inv)
-        log(s, inv, "started", machine_count=clip.counted, proposed=len(objects), included=sum(o["included"] for o in objects))
+        log(s, inv, "started", machine_count=clip.counted, proposed=len(objects), included=sum(o["included"] for o in objects), **how)
         s.commit()
         return inv_json(s, inv)
+
+    @router.post("/clips/{clip_id}/investigations", status_code=201)
+    def start(clip_id: str, body: StartIn, s: Session = Depends(db)) -> dict:
+        """Start on the best frame the pipeline picked."""
+        clip = checked_clip(s, clip_id, body)
+        return open_investigation(s, clip, body, frame_path(s, clip, uploads, out), picked="best")
+
+    @router.post("/clips/{clip_id}/investigations/from-frame", status_code=201)
+    def start_from_frame(
+        clip_id: str,
+        file: UploadFile = File(...),
+        at_ms: int = Form(ge=0),
+        reviewer: str = Form(...),
+        reviewer_id: str | None = Form(default=None),
+        location: str | None = Form(default=None),
+        s: Session = Depends(db),
+    ) -> dict:
+        """Start on a frame the reviewer paused the video on: the browser sends that exact frame as an image."""
+        try:
+            body = StartIn(reviewer=reviewer, reviewer_id=reviewer_id, location=location or None)
+        except ValidationError:
+            raise HTTPException(422, "Enter your name and employee ID") from None
+        clip = checked_clip(s, clip_id, body)
+        data = file.file.read(MAX_FRAME_BYTES + 1)
+        if len(data) > MAX_FRAME_BYTES:
+            raise HTTPException(413, "That picture is too large")
+        try:
+            with Image.open(io.BytesIO(data)) as im:
+                im.load()
+                picture = im.convert("RGB")
+        except Exception:
+            raise HTTPException(422, "That is not a picture") from None
+        if max(picture.size) > MAX_FRAME_SIDE or min(picture.size) < MIN_FRAME_SIDE:
+            raise HTTPException(422, f"The picture must be between {MIN_FRAME_SIDE} and {MAX_FRAME_SIDE} pixels a side")
+        relative = f"investigation_frames/{uuid.uuid4().hex}.png"
+        (out / relative).parent.mkdir(parents=True, exist_ok=True)
+        picture.save(out / relative, "PNG")
+        save_blob(s, out, relative)
+        return open_investigation(s, clip, body, out / relative, picked="paused", at_ms=at_ms)
 
     @router.get("/clips/{clip_id}/investigations")
     def list_for_clip(clip_id: str, s: Session = Depends(db)) -> list[dict]:

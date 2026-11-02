@@ -40,7 +40,7 @@ export default function App() {
   }, [reload])
 
   // Follow clips that are still being counted.
-  const working = clips.some((c) => c.status === 'queued' || c.status === 'running')
+  const working = clips.some((c) => c.status === 'queued' || c.status === 'running' || c.preview === 'pending')
   const wasWorking = useRef(false)
   useEffect(() => {
     if (!working) {

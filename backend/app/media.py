@@ -22,6 +22,16 @@ def duration_seconds(video: Path) -> float | None:
         return None
 
 
+def make_preview(video: Path, out: Path) -> None:
+    """A small silent copy (about 540 px wide, 700 kbps) the reviewer can play and pause in the browser. About 50 MB for 10 minutes."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-i", str(video), "-an", "-vf", "scale=540:-2", "-c:v", "libx264", "-preset", "veryfast",
+         "-b:v", "700k", "-maxrate", "800k", "-bufsize", "1600k", "-movflags", "+faststart", str(out)],
+        check=True,
+    )
+
+
 def wav_bytes(video: Path) -> bytes:
     """Mono 16-bit 16 kHz WAV of the clip's audio, as the transcribe endpoint requires."""
     with tempfile.TemporaryDirectory() as tmp:

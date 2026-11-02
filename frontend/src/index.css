@@ -530,3 +530,12 @@ button.danger {
   border-color: var(--bad);
   color: var(--bad);
 }
+
+.clipvideo {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  margin: 8px 0;
+  border-radius: 6px;
+  background: #000;
+}

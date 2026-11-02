@@ -232,3 +232,65 @@ def test_evidence_image_survives_the_disk_being_wiped(tmp_path):
     shutil.rmtree(out)
     served = client.get(f"/clips/{clip['id']}/evidence")
     assert served.status_code == 200 and served.headers["content-type"] == "image/png"
+
+
+def picture(w=200, h=300):
+    import io
+
+    buf = io.BytesIO()
+    Image.new("RGB", (w, h), "white").save(buf, "PNG")
+    return buf.getvalue()
+
+
+def start_from_frame(client, clip_id, image=None, **form):
+    data = {"at_ms": "17000", "reviewer": "ana", "reviewer_id": "E-1", **form}
+    return client.post(f"/clips/{clip_id}/investigations/from-frame", data=data, files={"file": ("f.png", image or picture(), "image/png")})
+
+
+def test_a_paused_frame_starts_an_investigation_on_that_exact_picture(env, sam):
+    client, clip_id = env
+    res = start_from_frame(client, clip_id, picture(240, 320))
+    assert res.status_code == 201
+    inv = res.json()
+    assert (inv["frame_w"], inv["frame_h"]) == (240, 320)
+    assert [o["id"] for o in inv["objects"]] == [0, 1, 2]  # SAM ran on the paused picture, as it does on the best frame
+    started = inv["events"][0]
+    assert started["action"] == "started" and started["detail"]["picked"] == "paused" and started["detail"]["at_ms"] == 17000
+    assert started["actor"] == "ana (E-1)"
+    assert client.get(f"/investigations/{inv['id']}/frame").headers["content-type"] == "image/png"
+
+
+def test_a_paused_frame_survives_the_disk_being_wiped(env, tmp_path):
+    import shutil
+
+    client, clip_id = env
+    inv = start_from_frame(client, clip_id).json()
+    shutil.rmtree(tmp_path / "out" / "investigation_frames")
+    assert client.get(f"/investigations/{inv['id']}/frame").status_code == 200
+    assert client.post(f"/investigations/{inv['id']}/boxes", json={"box": [20, 200, 120, 260]}).status_code == 200
+
+
+def test_a_paused_frame_is_checked(env):
+    client, clip_id = env
+    assert start_from_frame(client, clip_id, b"not a picture").status_code == 422
+    assert start_from_frame(client, clip_id, picture(10, 10)).status_code == 422  # too small to be a frame
+    assert start_from_frame(client, clip_id, picture(5000, 100)).status_code == 422  # too large a side
+    assert start_from_frame(client, clip_id, reviewer="").status_code == 422
+    assert start_from_frame(client, clip_id, at_ms="-1").status_code == 422
+    assert start_from_frame(client, clip_id, location="Z9-Z9").status_code == 422
+    assert start_from_frame(client, "nope").status_code == 404
+
+
+def test_the_capturer_cannot_start_from_a_paused_frame_of_their_own_clip(tmp_path, sam):
+    out = tmp_path / "out"
+
+    def runner(video, book):
+        (out / "evidence").mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (200, 300), "white").save(out / "evidence" / f"{video.stem}_raw.png")
+        return ClipResult(video.name, None, None, 3, True, [], "", "shelf")
+
+    client = TestClient(create_app("sqlite://", tmp_path / "uploads", runner, out, sam))
+    client.put("/plan", files={"file": ("b.csv", BOOK_CSV, "text/csv")})
+    clip = client.post("/clips", files={"file": ("s.mp4", b"video", "video/mp4")}, data={"captured_by_id": "E-1"}).json()
+    assert start_from_frame(client, clip["id"]).status_code == 409
+    assert start_from_frame(client, clip["id"], reviewer_id="E-2").status_code == 201

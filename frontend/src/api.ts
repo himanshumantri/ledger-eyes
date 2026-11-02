@@ -20,6 +20,7 @@ export type Clip = {
   needs_review: boolean
   reasons: string[]
   has_evidence: boolean
+  preview: 'ready' | 'pending' | 'none' // the playable copy of the video
   transcript: string
   review: { reviewer: string; reviewer_id: string | null; created_at: string; lines: { item: string; qty: number; note: string }[] } | null
 }
@@ -56,6 +57,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return res.json() as Promise<T>
 }
+
+export const previewUrl = (clipId: string) => `${API}/clips/${clipId}/preview`
 
 export const getPlan = () => request<Plan>('/plan')
 export const getClips = () => request<Clip[]>('/clips')
@@ -137,3 +140,14 @@ export const patchObject =(id: string, objId: number, body: { included?: boolean
   request<Investigation>(`/investigations/${id}/objects/${objId}`, json('PATCH', body))
 export const resolveInvestigation = (id: string, outcome: 'confirmed' | 'unresolved', note: string) =>
   request<Investigation>(`/investigations/${id}/resolve`, json('POST', { outcome, note }))
+
+/** Start on a frame the reviewer paused the video on: the page sends that exact frame as a picture. */
+export function startFromFrame(clipId: string, image: Blob, atMs: number, who: { name: string; employeeId: string }, location?: string) {
+  const form = new FormData()
+  form.append('file', image, 'frame.png')
+  form.append('at_ms', String(atMs))
+  form.append('reviewer', who.name.trim())
+  form.append('reviewer_id', who.employeeId.trim())
+  if (location) form.append('location', location)
+  return request<Investigation>(`/clips/${clipId}/investigations/from-frame`, { method: 'POST', body: form })
+}

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import OUT
 from app.files import save_blob
+from app.media import make_preview
 from app.reconcile import BookLine, ClipResult
 from app.tables import BookLineRow, Clip
 
@@ -37,4 +38,20 @@ def process_clip(sessions: sessionmaker[Session], clip_id: str, uploads: Path, r
                 if relative:
                     save_blob(s, out, relative)
         clip.finished_at = datetime.now(UTC)
+        s.commit()
+
+
+def build_preview(sessions: sessionmaker[Session], clip_id: str, uploads: Path, out: Path = OUT, make: Callable[[Path, Path], None] = make_preview) -> None:
+    """Make the playable copy once counting is done, so it can never delay or fail a count. A failure just means no preview."""
+    with sessions() as s:
+        clip = s.get(Clip, clip_id)
+        if clip is None or clip.status != "done":
+            return
+        relative = f"previews/{Path(clip.filename).stem}.mp4"
+        try:
+            make(uploads / clip.filename, out / relative)
+            made = save_blob(s, out, relative)
+        except Exception:  # ffmpeg missing or the video unreadable
+            made = False
+        clip.preview = relative if made else ""
         s.commit()

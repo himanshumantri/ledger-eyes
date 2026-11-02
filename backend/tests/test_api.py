@@ -145,3 +145,38 @@ def test_a_video_over_the_length_cap_is_refused_and_not_kept(client, tmp_path, m
     assert upload(client).status_code == 201
     monkeypatch.setattr("app.api.duration_seconds", lambda path: None)  # unreadable length: the pipeline decides
     assert upload(client).status_code == 201
+
+
+def test_the_playable_copy_is_made_after_counting_and_can_be_seeked(client, runner, tmp_path, monkeypatch):
+    put_plan(client)
+    runner.results.append(auto_pass())
+    monkeypatch.setattr("app.api.make_preview", lambda video, out: (out.parent.mkdir(parents=True, exist_ok=True), out.write_bytes(b"0123456789"))[1])
+    clip = upload(client).json()
+    assert client.get(f"/clips/{clip['id']}").json()["preview"] == "ready"
+    whole = client.get(f"/clips/{clip['id']}/preview")
+    assert whole.status_code == 200 and whole.content == b"0123456789" and whole.headers["accept-ranges"] == "bytes"
+    part = client.get(f"/clips/{clip['id']}/preview", headers={"Range": "bytes=2-5", "Origin": "http://localhost:5173"})
+    assert part.status_code == 206 and part.content == b"2345" and part.headers["content-range"] == "bytes 2-5/10"
+    assert part.headers["access-control-allow-origin"] == "http://localhost:5173"  # the page reads the paused frame, so the video must be CORS-readable
+    assert client.get(f"/clips/{clip['id']}/preview", headers={"Range": "bytes=7-"}).content == b"789"
+    assert client.get(f"/clips/{clip['id']}/preview", headers={"Range": "bytes=-3"}).content == b"789"
+    assert client.get(f"/clips/{clip['id']}/preview", headers={"Range": "bytes=99-"}).status_code == 416
+    assert client.get(f"/clips/{clip['id']}/preview", headers={"Range": "lines=1-2"}).status_code == 416
+    # the disk is wiped: the copy comes back from the database
+    import shutil
+
+    shutil.rmtree(tmp_path / "out", ignore_errors=True)
+    assert client.get(f"/clips/{clip['id']}/preview").content == b"0123456789"
+
+
+def test_a_playable_copy_that_cannot_be_made_does_not_touch_the_count(client, runner, monkeypatch):
+    put_plan(client)
+    runner.results.append(auto_pass())
+
+    def broken(video, out):
+        raise RuntimeError("ffmpeg is not installed")
+
+    monkeypatch.setattr("app.api.make_preview", broken)
+    clip = client.get(f"/clips/{upload(client).json()['id']}").json()
+    assert clip["status"] == "done" and clip["machine_count"] == 4 and clip["preview"] == "none"
+    assert client.get(f"/clips/{clip['id']}/preview").status_code == 404

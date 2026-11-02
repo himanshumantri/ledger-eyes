@@ -47,6 +47,8 @@ class Clip(Base):
     review_location: Mapped[str | None] = mapped_column(String(100), default=None)
     captured_by: Mapped[str | None] = mapped_column(String(200), default=None)  # the capturer, who may not review this clip
     captured_by_id: Mapped[str | None] = mapped_column(String(100), default=None)  # their employee ID
+    # The playable preview copy, made after counting: None = not made yet, "" = could not be made, else its path under the data folder
+    preview: Mapped[str | None] = mapped_column(String(500), default=None)
 
 
 class Blob(Base):
