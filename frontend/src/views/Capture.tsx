@@ -73,7 +73,7 @@ export default function CaptureView({
           Say the location first, for example <em>"Aisle A1, shelf B2"</em>, then the item names.
         </li>
         <li>Keep every carton in view and do not cover labels.</li>
-        <li>A video can be up to 6 minutes. Film at 720p so a long video stays small enough to upload.</li>
+        <li>A video can be up to 2 minutes. Film at 720p so a long video stays small enough to upload.</li>
       </ol>
       <input
         type="file"

@@ -15,7 +15,7 @@ OUT = TESTDATA / "out"  # cached raw model output, so reruns need no API call
 UPLOADS = Path(os.environ.get("UPLOAD_DIR", TESTDATA / "uploads"))
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{(TESTDATA / 'ledgereyes.db').as_posix()}")
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "500"))
-MAX_VIDEO_SECONDS = int(os.environ.get("MAX_VIDEO_SECONDS", "360"))  # the voice model took 6.8 minutes but answered 502 to 9.5; raise this only after a longer test passes
+MAX_VIDEO_SECONDS = int(os.environ.get("MAX_VIDEO_SECONDS", "120"))  # only 12-29 second clips are proven; raise this when long_video_test.py passes at a longer length
 
 
 def auth_headers() -> dict:
