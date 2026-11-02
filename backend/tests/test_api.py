@@ -137,11 +137,11 @@ def test_unknown_clip_is_404(client):
 
 def test_a_video_over_the_length_cap_is_refused_and_not_kept(client, tmp_path, monkeypatch):
     put_plan(client)
-    monkeypatch.setattr("app.api.duration_seconds", lambda path: 301.0)
+    monkeypatch.setattr("app.api.duration_seconds", lambda path: 361.0)
     res = upload(client)
-    assert res.status_code == 422 and "at most 5 minutes" in res.json()["detail"]
+    assert res.status_code == 422 and "at most 6 minutes" in res.json()["detail"]
     assert list((tmp_path / "uploads").glob("*")) == []
-    monkeypatch.setattr("app.api.duration_seconds", lambda path: 300.0)
+    monkeypatch.setattr("app.api.duration_seconds", lambda path: 360.0)
     assert upload(client).status_code == 201
     monkeypatch.setattr("app.api.duration_seconds", lambda path: None)  # unreadable length: the pipeline decides
     assert upload(client).status_code == 201
