@@ -67,10 +67,10 @@ export function putPlan(file: File) {
   return request<{ lines: number; locations: number }>('/plan', { method: 'PUT', body: form })
 }
 
-export function uploadClip(file: File, sha256: string, who: { name: string; employeeId: string }) {
+export function uploadClip(file: File, sha256: string | null, who: { name: string; employeeId: string }) {
   const form = new FormData()
   form.append('file', file)
-  form.append('client_sha256', sha256)
+  if (sha256) form.append('client_sha256', sha256)
   form.append('captured_by', who.name.trim())
   form.append('captured_by_id', who.employeeId.trim())
   return request<Clip>('/clips', { method: 'POST', body: form })

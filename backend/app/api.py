@@ -14,9 +14,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import MAX_UPLOAD_MB, OUT
+from app.config import MAX_UPLOAD_MB, MAX_VIDEO_SECONDS, OUT
 from app.files import restore_blob
 from app.jobs import Runner, book_lines, process_clip
+from app.media import duration_seconds
 from app.reconcile import ClipResult, ReviewLine, Row, parse_book, reconcile, write_reports
 from app.roles import label, require_not_capturer
 from app.tables import BookLineRow, Clip, Review
@@ -137,12 +138,16 @@ def create_router(sessions: sessionmaker[Session], uploads: Path, runner: Runner
                 if size > MAX_UPLOAD_MB * 1024 * 1024:
                     video_file.close()
                     path.unlink(missing_ok=True)
-                    raise HTTPException(413, f"Video is larger than {MAX_UPLOAD_MB} MB")
+                    raise HTTPException(413, f"Video is larger than {MAX_UPLOAD_MB} MB. Film at 720p to keep long videos small.")
                 digest.update(chunk)
                 video_file.write(chunk)
         if client_sha256 and client_sha256.lower() != digest.hexdigest():
             path.unlink(missing_ok=True)
             raise HTTPException(422, "The video changed in transit: its hash does not match the one the device sent")
+        length = duration_seconds(path)
+        if length is not None and length > MAX_VIDEO_SECONDS:
+            path.unlink(missing_ok=True)
+            raise HTTPException(422, f"Videos can be at most {MAX_VIDEO_SECONDS // 60} minutes; this one is {length / 60:.1f}. Film one aisle at a time, at 720p.")
         clip = Clip(id=clip_id, filename=name, original_name=file.filename or name, sha256=digest.hexdigest(), size_bytes=size, captured_by=(captured_by or "").strip() or None, captured_by_id=(captured_by_id or "").strip()[:100] or None)
         s.add(clip)
         s.commit()

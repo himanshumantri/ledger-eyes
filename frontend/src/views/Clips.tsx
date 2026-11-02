@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { API, type Clip, type Plan } from '../api'
 import { plain } from '../plain'
 import type { Role, Who } from '../roles'
@@ -12,8 +12,13 @@ function statusLabel(c: Clip): { text: string; tone: string } {
   return c.needs_review ? { text: 'Needs review', tone: 'warn' } : { text: 'Auto-passed', tone: 'ok' }
 }
 
-export default function ClipsView({ clips, plan, role, who, reload }: { clips: Clip[]; plan: Plan; role: Role; who: Who; reload: () => void }) {
-  const [open, setOpen] = useState<string | null>(null)
+export default function ClipsView({
+  clips, plan, role, who, reload, focus, onGoToReview,
+}: { clips: Clip[]; plan: Plan; role: Role; who: Who; reload: () => void; focus: string | null; onGoToReview: (clipId: string) => void }) {
+  const [open, setOpen] = useState<string | null>(focus)
+  useEffect(() => {
+    if (focus) setOpen(focus)
+  }, [focus])
   const [tool, setTool] = useState<string | null>(null) // the clip whose Correct real footage panel is open
   const queue = clips.filter((c) => c.status === 'done' && c.needs_review && !c.review).length
 
@@ -56,6 +61,11 @@ export default function ClipsView({ clips, plan, role, who, reload }: { clips: C
                     <p className="hint">
                       Not counted yet. Cartons it could not confirm are left out, so a reviewer's count is needed
                       {c.machine_count ? ` (it confirmed ${c.machine_count} on its own)` : ''}.
+                    </p>
+                  )}
+                  {c.status === 'done' && c.needs_review && !c.review && role === 'Capturer' && (
+                    <p>
+                      <button className="primary" onClick={() => onGoToReview(c.id)}>Switch to Reviewer to count it</button>
                     </p>
                   )}
                   {c.transcript && <p className="hint">Narration: “{c.transcript}”</p>}

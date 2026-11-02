@@ -15,6 +15,7 @@ OUT = TESTDATA / "out"  # cached raw model output, so reruns need no API call
 UPLOADS = Path(os.environ.get("UPLOAD_DIR", TESTDATA / "uploads"))
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{(TESTDATA / 'ledgereyes.db').as_posix()}")
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "500"))
+MAX_VIDEO_SECONDS = int(os.environ.get("MAX_VIDEO_SECONDS", "600"))  # longer than this has not been tried against the models
 
 
 def auth_headers() -> dict:

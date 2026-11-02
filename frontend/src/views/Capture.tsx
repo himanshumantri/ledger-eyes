@@ -4,15 +4,19 @@ import { whoProblem, type Who } from '../roles'
 
 type Step = 'idle' | 'hashing' | 'uploading' | 'sent' | 'error'
 
+// Hashing reads the whole file into the browser's memory, which a phone may not manage for a big video. The server hashes it anyway.
+const BIG_FILE = 150 * 1024 * 1024
+
 const minutes = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`
 
 export default function CaptureView({
-  hasPlan, who, clips, onUploaded, onGoToClips,
-}: { hasPlan: boolean; who: Who; clips: Clip[]; onUploaded: () => void; onGoToClips: () => void }) {
+  hasPlan, who, clips, onUploaded, onGoToClips, onGoToReview,
+}: { hasPlan: boolean; who: Who; clips: Clip[]; onUploaded: () => void; onGoToClips: () => void; onGoToReview: (clipId: string) => void }) {
   const [step, setStep] = useState<Step>('idle')
   const [error, setError] = useState('')
   const [sent, setSent] = useState<Clip | null>(null)
   const [hidden, setHidden] = useState(false)
+  const [skippedHash, setSkippedHash] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
   // The server reports queued, running and done, not a percentage, so the bar is a moving indicator with the time spent.
@@ -40,7 +44,8 @@ export default function CaptureView({
     setHidden(false)
     try {
       setStep('hashing')
-      const hash = await sha256Hex(file)
+      const hash = file.size > BIG_FILE ? null : await sha256Hex(file)
+      setSkippedHash(hash === null)
       setStep('uploading')
       setSent(await uploadClip(file, hash, who))
       setNow(Date.now())
@@ -68,6 +73,7 @@ export default function CaptureView({
           Say the location first, for example <em>"Aisle A1, shelf B2"</em>, then the item names.
         </li>
         <li>Keep every carton in view and do not cover labels.</li>
+        <li>A video can be up to 10 minutes. Film at 720p so a long video stays small enough to upload.</li>
       </ol>
       <input
         type="file"
@@ -82,8 +88,9 @@ export default function CaptureView({
       {step === 'error' && <p className="warn">{error}</p>}
       {step === 'sent' && live && (
         <p role="status">
-          Received <strong>{live.original_name}</strong> ({(live.size_bytes / 1e6).toFixed(1)} MB). The server confirmed the same fingerprint:{' '}
+          Received <strong>{live.original_name}</strong> ({(live.size_bytes / 1e6).toFixed(1)} MB). {skippedHash ? 'The server fingerprint:' : 'The server confirmed the same fingerprint:'}{' '}
           <code>{live.sha256.slice(0, 12)}…</code>.
+          {skippedHash && ' The video is large, so the device did not fingerprint it; the server did.'}
         </p>
       )}
 
@@ -122,6 +129,11 @@ export default function CaptureView({
                       ? 'It needs a reviewer to count it.'
                       : `It counted ${live.machine_count ?? 0} at ${live.location ?? 'an unknown location'}.`}
                 </p>
+                {live.status === 'done' && live.needs_review && (
+                  <>
+                    <button className="primary" onClick={() => onGoToReview(live.id)}>Switch to Reviewer to count it</button>{' '}
+                  </>
+                )}
                 <button onClick={onGoToClips}>Go to Clips</button> <button onClick={() => setHidden(true)}>Close</button>
               </>
             )}

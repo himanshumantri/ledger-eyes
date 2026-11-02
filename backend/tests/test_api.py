@@ -133,3 +133,15 @@ def test_second_review_supersedes_the_first_and_a_refilm_replaces_the_clip(clien
 def test_unknown_clip_is_404(client):
     assert client.get("/clips/nope").status_code == 404
     assert client.get("/clips/nope/evidence").status_code == 404
+
+
+def test_a_video_over_the_length_cap_is_refused_and_not_kept(client, tmp_path, monkeypatch):
+    put_plan(client)
+    monkeypatch.setattr("app.api.duration_seconds", lambda path: 601.0)
+    res = upload(client)
+    assert res.status_code == 422 and "at most 10 minutes" in res.json()["detail"]
+    assert list((tmp_path / "uploads").glob("*")) == []
+    monkeypatch.setattr("app.api.duration_seconds", lambda path: 600.0)
+    assert upload(client).status_code == 201
+    monkeypatch.setattr("app.api.duration_seconds", lambda path: None)  # unreadable length: the pipeline decides
+    assert upload(client).status_code == 201

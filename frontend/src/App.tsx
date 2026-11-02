@@ -21,6 +21,7 @@ export default function App() {
   const [clips, setClips] = useState<Clip[]>([])
   const [rows, setRows] = useState<Row[]>([])
   const [error, setError] = useState('')
+  const [focus, setFocus] = useState<string | null>(null) // a clip to open in the Clips tab
 
   const reload = useCallback(async () => {
     try {
@@ -62,6 +63,11 @@ export default function App() {
     setRole(r)
     setTab(TABS[r][0])
     remember('role', r)
+  }
+
+  function goToReview(clipId: string) {
+    chooseRole('Reviewer')
+    setFocus(clipId)
   }
 
   function rename(value: string) {
@@ -108,8 +114,8 @@ export default function App() {
         {missing && <p className="warn">{missing}</p>}
         {error && <p className="warn">{error}</p>}
         {tab === 'Book stock' && <PlanView plan={plan} reload={reload} />}
-        {tab === 'Capture' && <CaptureView hasPlan={(plan?.lines.length ?? 0) > 0} who={who} clips={clips} onUploaded={reload} onGoToClips={() => setTab('Clips')} />}
-        {tab === 'Clips' && plan && <ClipsView clips={clips} plan={plan} role={role} who={who} reload={reload} />}
+        {tab === 'Capture' && <CaptureView hasPlan={(plan?.lines.length ?? 0) > 0} who={who} clips={clips} onUploaded={reload} onGoToClips={() => setTab('Clips')} onGoToReview={goToReview} />}
+        {tab === 'Clips' && plan && <ClipsView clips={clips} plan={plan} role={role} who={who} reload={reload} focus={focus} onGoToReview={goToReview} />}
         {tab === 'Reconciliation' && <ReconciliationView rows={rows} reload={reload} />}
       </main>
     </>
