@@ -42,9 +42,21 @@ def test_a_clip_with_no_named_capturer_can_be_reviewed_by_anyone(tmp_path):
 def test_a_column_added_to_the_code_is_added_to_an_existing_table(tmp_path):
     db = tmp_path / "old.db"
     engine = create_engine(f"sqlite:///{db.as_posix()}")
-    old_ddl = re.sub(r",\s*captured_by VARCHAR\(200\)", "", str(CreateTable(Clip.__table__).compile(engine)))
+    old_ddl = re.sub(r",\s*captured_by(_id)? VARCHAR\(\d+\)", "", str(CreateTable(Clip.__table__).compile(engine)))
     assert "captured_by" not in old_ddl
     with engine.begin() as conn:
         conn.execute(text(old_ddl))
     make_session_factory(f"sqlite:///{db.as_posix()}")
-    assert "captured_by" in {c["name"] for c in inspect(engine).get_columns("clips")}
+    assert {"captured_by", "captured_by_id"} <= {c["name"] for c in inspect(engine).get_columns("clips")}
+
+
+def test_the_same_employee_id_is_the_same_person_even_under_another_name(tmp_path):
+    client = make_client(tmp_path)
+    clip = client.post("/clips", files={"file": ("s.mp4", b"v", "video/mp4")}, data={"captured_by": "Ana", "captured_by_id": "E-17"}).json()
+    assert clip["captured_by_id"] == "E-17"
+    body = {"reviewer": "Ana K", "reviewer_id": "e-17", "lines": [{"item": "monitor", "qty": 4}]}
+    assert client.post(f"/clips/{clip['id']}/review", json=body).status_code == 409
+    body = {"reviewer": "Meera", "reviewer_id": "E-42", "lines": [{"item": "monitor", "qty": 4}]}
+    done = client.post(f"/clips/{clip['id']}/review", json=body).json()
+    assert done["review"]["reviewer"] == "Meera" and done["review"]["reviewer_id"] == "E-42"
+    assert any("Meera (E-42)" in r["reviewer"] for r in client.get("/reconciliation").json() if r["count_source"] == "reviewed")

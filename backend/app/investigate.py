@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.files import restore_blob
 from app.jobs import book_lines
 from app.media import extract_frame
-from app.roles import require_not_capturer
+from app.roles import label, require_not_capturer
 from app.sam_still import box_prompt, point_prompt
 from app.segmentation import parse_sam_output
 from app.tables import Clip, Investigation, InvestigationEvent, Review
@@ -37,6 +37,7 @@ MIN_BOX = 8  # pixels; a smaller drawn box is a stray click
 
 class StartIn(BaseModel):
     reviewer: str = Field(min_length=1, max_length=200)
+    reviewer_id: str | None = Field(default=None, max_length=100)
     location: str | None = None
 
 
@@ -48,6 +49,7 @@ class ClickIn(BaseModel):
 class BoxIn(BaseModel):
     box: list[int] = Field(min_length=4, max_length=4)  # x1, y1, x2, y2 in frame pixels, as the reviewer drew it
     object_id: int | None = None  # redraw this object's box; without it, add a new carton
+    corners: list[list[int]] | None = Field(default=None, max_length=8)  # the points the reviewer clicked, kept in the log
 
 
 class ObjectPatch(BaseModel):
@@ -94,12 +96,12 @@ def next_added_id(inv: Investigation) -> int:
 
 
 def inv_json(s: Session, inv: Investigation) -> dict:
-    events = s.scalars(select(InvestigationEvent).where(InvestigationEvent.investigation_id == inv.id).order_by(InvestigationEvent.id))
+    events = list(s.scalars(select(InvestigationEvent).where(InvestigationEvent.investigation_id == inv.id).order_by(InvestigationEvent.id)))
     return {
-        "id": inv.id, "clip_id": inv.clip_id, "reviewer": inv.reviewer, "location": inv.location, "status": inv.status,
+        "id": inv.id, "clip_id": inv.clip_id, "reviewer": inv.reviewer, "reviewer_id": inv.reviewer_id, "location": inv.location, "status": inv.status,
         "outcome": inv.outcome, "note": inv.note, "created_at": _iso(inv.created_at), "resolved_at": _iso(inv.resolved_at),
         "frame_w": inv.frame_w, "frame_h": inv.frame_h, "machine_count": inv.machine_count, "objects": inv.objects,
-        "capped": sum(o["source"] == "auto" for o in inv.objects) >= SAM_LIMIT,  # SAM may have stopped before listing every carton
+        "capped": any(e.action == "started" and e.detail.get("proposed", 0) >= SAM_LIMIT for e in events),  # SAM may have stopped before listing every carton
         "counts": counts(inv),
         "events": [{"at": _iso(e.at), "actor": e.actor, "action": e.action, "detail": e.detail} for e in events],
     }
@@ -113,7 +115,7 @@ def create_investigation_router(sessions: sessionmaker[Session], uploads: Path, 
             yield s
 
     def log(s: Session, inv: Investigation, action: str, **detail) -> None:
-        s.add(InvestigationEvent(investigation_id=inv.id, actor=inv.reviewer, action=action, detail=detail))
+        s.add(InvestigationEvent(investigation_id=inv.id, actor=label(inv.reviewer, inv.reviewer_id), action=action, detail=detail))
 
     def get_open(s: Session, inv_id: str) -> Investigation:
         inv = s.get(Investigation, inv_id)
@@ -130,7 +132,7 @@ def create_investigation_router(sessions: sessionmaker[Session], uploads: Path, 
             raise HTTPException(404, "No such clip")
         if clip.status != "done":
             raise HTTPException(409, f"Clip is {clip.status}; investigate it once counting has finished")
-        require_not_capturer(clip, body.reviewer)
+        require_not_capturer(clip, body.reviewer, body.reviewer_id)
         if body.location is not None and body.location not in {b.location for b in book_lines(s)}:
             raise HTTPException(422, f"{body.location} is not a location in the book stock")
         frame = frame_path(s, clip, uploads, out)
@@ -142,7 +144,7 @@ def create_investigation_router(sessions: sessionmaker[Session], uploads: Path, 
             for d in proposals
         ]
         inv = Investigation(
-            id=uuid.uuid4().hex, clip_id=clip_id, reviewer=body.reviewer.strip(), location=body.location or clip.review_location or clip.location,
+            id=uuid.uuid4().hex, clip_id=clip_id, reviewer=body.reviewer.strip(), reviewer_id=(body.reviewer_id or "").strip() or None, location=body.location or clip.review_location or clip.location,
             frame=frame.relative_to(out).as_posix(), frame_w=w, frame_h=h, machine_count=clip.counted, objects=objects,
         )
         s.add(inv)
@@ -216,11 +218,11 @@ def create_investigation_router(sessions: sessionmaker[Session], uploads: Path, 
             clip = s.get(Clip, inv.clip_id)
             obj = {"id": next_added_id(inv), "source": "drawn", "box": new_box, "conf": conf, "included": True, "item": clip.item, "click": None}
             inv.objects = [*inv.objects, obj]
-            log(s, inv, "box_added", object=obj["id"], drawn=body.box, box=new_box, conf=conf)
+            log(s, inv, "box_added", object=obj["id"], drawn=body.box, corners=body.corners, box=new_box, conf=conf)
         else:
             before = next(o for o in inv.objects if o["id"] == body.object_id)["box"]
             inv.objects = [{**o, "box": new_box, "conf": conf, "adjusted": True} if o["id"] == body.object_id else o for o in inv.objects]
-            log(s, inv, "box_redrawn", object=body.object_id, was=before, drawn=body.box, box=new_box, conf=conf)
+            log(s, inv, "box_redrawn", object=body.object_id, was=before, drawn=body.box, corners=body.corners, box=new_box, conf=conf)
         s.commit()
         return inv_json(s, inv)
 
@@ -247,6 +249,18 @@ def create_investigation_router(sessions: sessionmaker[Session], uploads: Path, 
         s.commit()
         return inv_json(s, inv)
 
+    @router.delete("/investigations/{inv_id}/objects/{obj_id}")
+    def delete_object(inv_id: str, obj_id: int, s: Session = Depends(db)) -> dict:
+        """Remove a box that is not a carton at all. Unlike unticking it, it leaves the count and the picture; the log keeps what it was."""
+        inv = get_open(s, inv_id)
+        gone = next((o for o in inv.objects if o["id"] == obj_id), None)
+        if gone is None:
+            raise HTTPException(404, "No such object")
+        inv.objects = [o for o in inv.objects if o["id"] != obj_id]
+        log(s, inv, "object_deleted", object=obj_id, box=gone["box"], conf=gone["conf"], included=gone["included"], item=gone["item"], source=gone["source"])
+        s.commit()
+        return inv_json(s, inv)
+
     @router.post("/investigations/{inv_id}/resolve")
     def resolve(inv_id: str, body: ResolveIn, s: Session = Depends(db)) -> dict:
         """"confirmed" records the per-item counts as the clip's review; "unresolved" only keeps the note."""
@@ -262,7 +276,7 @@ def create_investigation_router(sessions: sessionmaker[Session], uploads: Path, 
             clip = s.get(Clip, inv.clip_id)
             clip.review_location = inv.location
             batch = uuid.uuid4().hex
-            s.add_all(Review(clip_id=inv.clip_id, batch=batch, item=item, qty=qty, reviewer=inv.reviewer, note=f"investigation {inv.id}") for item, qty in c["per_item"].items())
+            s.add_all(Review(clip_id=inv.clip_id, batch=batch, item=item, qty=qty, reviewer=inv.reviewer, reviewer_id=inv.reviewer_id, note=f"investigation {inv.id}") for item, qty in c["per_item"].items())
         inv.status, inv.outcome, inv.note, inv.resolved_at = "resolved", body.outcome, body.note, datetime.now(UTC)
         log(s, inv, "resolved", outcome=body.outcome, counts=counts(inv)["per_item"], note=body.note)
         s.commit()

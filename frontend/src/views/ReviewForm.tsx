@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { postReview, type Clip, type Plan } from '../api'
+import { whoProblem, type Who } from '../roles'
 
 /** A reviewer's per-item counts for one clip. Submitting replaces the machine count for the clip. */
-export default function ReviewForm({ clip, plan, name, onSaved }: { clip: Clip; plan: Plan; name: string; onSaved: () => void }) {
+export default function ReviewForm({ clip, plan, who, onSaved }: { clip: Clip; plan: Plan; who: Who; onSaved: () => void }) {
   const [location, setLocation] = useState(clip.location ?? '')
-  const [reviewer, setReviewer] = useState(name)
   const [qty, setQty] = useState<Record<string, string>>(
     Object.fromEntries((clip.review?.lines ?? []).map((l) => [l.item, String(l.qty)])),
   )
@@ -15,13 +15,14 @@ export default function ReviewForm({ clip, plan, name, onSaved }: { clip: Clip; 
 
   async function save() {
     const lines = items.filter((i) => qty[i] !== undefined && qty[i] !== '').map((i) => ({ item: i, qty: Number(qty[i]), note: '' }))
-    if (!reviewer.trim()) return setError('Enter your name.')
+    const problem = whoProblem(who)
+    if (problem) return setError(problem)
     if (!clip.location && !location) return setError('Choose the location: the narration did not name one.')
     if (lines.length === 0 || lines.some((l) => !Number.isInteger(l.qty) || l.qty < 0)) return setError('Enter a whole number for at least one item.')
     setSaving(true)
     setError('')
     try {
-      await postReview(clip.id, { reviewer: reviewer.trim(), location: clip.location ? undefined : location, lines })
+      await postReview(clip.id, { reviewer: who.name.trim(), reviewer_id: who.employeeId.trim(), location: clip.location ? undefined : location, lines })
       onSaved()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -61,10 +62,9 @@ export default function ReviewForm({ clip, plan, name, onSaved }: { clip: Clip; 
           </label>
         ))}
       </div>
-      <label>
-        Reviewer
-        <input value={reviewer} onChange={(e) => setReviewer(e.target.value)} />
-      </label>
+      <p className="hint">
+        Recorded as {who.name.trim() || '(name missing)'}, ID {who.employeeId.trim() || '(missing)'}.
+      </p>
       {error && <p className="warn">{error}</p>}
       <button type="submit" disabled={saving}>
         {saving ? 'Saving…' : 'Save count'}

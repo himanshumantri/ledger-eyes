@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getClips, getPlan, getReconciliation, type Clip, type Plan, type Row } from './api'
-import { BLURB, DEFAULT_NAME, remember, remembered, ROLES, TABS, type Role } from './roles'
+import { BLURB, remember, remembered, ROLES, TABS, whoProblem, type Role } from './roles'
 import CaptureView from './views/Capture'
 import ClipsView from './views/Clips'
 import PlanView from './views/Plan'
@@ -11,7 +11,10 @@ const asRole = (v: string | null): Role => (ROLES.find((r) => r === v) ?? 'Captu
 export default function App() {
   const [role, setRole] = useState<Role>(() => asRole(remembered('role')))
   const [names, setNames] = useState<Record<Role, string>>(() =>
-    Object.fromEntries(ROLES.map((r) => [r, remembered(`name-${r}`) || DEFAULT_NAME[r]])) as Record<Role, string>,
+    Object.fromEntries(ROLES.map((r) => [r, remembered(`name-${r}`) ?? ''])) as Record<Role, string>,
+  )
+  const [ids, setIds] = useState<Record<Role, string>>(() =>
+    Object.fromEntries(ROLES.map((r) => [r, remembered(`employee-id-${r}`) ?? ''])) as Record<Role, string>,
   )
   const [tab, setTab] = useState<string>(TABS[role][0])
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -51,7 +54,8 @@ export default function App() {
     return () => clearInterval(t)
   }, [working, reload])
 
-  const name = names[role]
+  const who = { name: names[role], employeeId: ids[role] }
+  const missing = whoProblem(who)
   const waiting = clips.filter((c) => c.status === 'done' && c.needs_review && !c.review).length
 
   function chooseRole(r: Role) {
@@ -63,6 +67,11 @@ export default function App() {
   function rename(value: string) {
     setNames({ ...names, [role]: value })
     remember(`name-${role}`, value)
+  }
+
+  function reidentify(value: string) {
+    setIds({ ...ids, [role]: value })
+    remember(`employee-id-${role}`, value)
   }
 
   return (
@@ -78,7 +87,11 @@ export default function App() {
           ))}
           <label className="who">
             Name
-            <input value={name} onChange={(e) => rename(e.target.value)} maxLength={60} />
+            <input value={who.name} onChange={(e) => rename(e.target.value)} maxLength={60} aria-invalid={!who.name.trim()} />
+          </label>
+          <label className="who">
+            Employee ID
+            <input value={who.employeeId} onChange={(e) => reidentify(e.target.value)} maxLength={40} aria-invalid={!who.employeeId.trim()} />
           </label>
         </div>
         <nav aria-label="Sections">
@@ -92,10 +105,11 @@ export default function App() {
       </header>
       <main>
         <p className="hint">{BLURB[role]}</p>
+        {missing && <p className="warn">{missing}</p>}
         {error && <p className="warn">{error}</p>}
         {tab === 'Book stock' && <PlanView plan={plan} reload={reload} />}
-        {tab === 'Capture' && <CaptureView hasPlan={(plan?.lines.length ?? 0) > 0} capturer={name} onUploaded={reload} />}
-        {tab === 'Clips' && plan && <ClipsView clips={clips} plan={plan} role={role} name={name} reload={reload} />}
+        {tab === 'Capture' && <CaptureView hasPlan={(plan?.lines.length ?? 0) > 0} who={who} clips={clips} onUploaded={reload} onGoToClips={() => setTab('Clips')} />}
+        {tab === 'Clips' && plan && <ClipsView clips={clips} plan={plan} role={role} who={who} reload={reload} />}
         {tab === 'Reconciliation' && <ReconciliationView rows={rows} reload={reload} />}
       </main>
     </>

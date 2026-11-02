@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { API, type Clip, type Plan } from '../api'
 import { plain } from '../plain'
-import type { Role } from '../roles'
+import type { Role, Who } from '../roles'
 import Investigate from './Investigate'
 import ReviewForm from './ReviewForm'
 
@@ -12,8 +12,9 @@ function statusLabel(c: Clip): { text: string; tone: string } {
   return c.needs_review ? { text: 'Needs review', tone: 'warn' } : { text: 'Auto-passed', tone: 'ok' }
 }
 
-export default function ClipsView({ clips, plan, role, name, reload }: { clips: Clip[]; plan: Plan; role: Role; name: string; reload: () => void }) {
+export default function ClipsView({ clips, plan, role, who, reload }: { clips: Clip[]; plan: Plan; role: Role; who: Who; reload: () => void }) {
   const [open, setOpen] = useState<string | null>(null)
+  const [tool, setTool] = useState<string | null>(null) // the clip whose Correct real footage panel is open
   const queue = clips.filter((c) => c.status === 'done' && c.needs_review && !c.review).length
 
   return (
@@ -86,11 +87,14 @@ export default function ClipsView({ clips, plan, role, name, reload }: { clips: 
                   )}
                   {c.status === 'done' && role === 'Reviewer' && (
                     <>
-                      <ReviewForm key={`${c.id}-${name}-${c.review?.created_at ?? 'new'}`} clip={c} plan={plan} name={name} onSaved={reload} />
-                      <details className="inv">
-                        <summary>Correct real footage</summary>
-                        <Investigate key={`${c.id}-${name}`} clip={c} plan={plan} name={name} onResolved={reload} />
-                      </details>
+                      <div className="review-row">
+                        <ReviewForm key={`${c.id}-${who.name}-${who.employeeId}-${c.review?.created_at ?? 'new'}`} clip={c} plan={plan} who={who} onSaved={reload} />
+                        <button className="cta" aria-expanded={tool === c.id} onClick={() => setTool(tool === c.id ? null : c.id)}>
+                          <strong>Correct real footage</strong>
+                          <span>Outline, redraw or delete the cartons on the picture, then confirm the count</span>
+                        </button>
+                      </div>
+                      {tool === c.id && <Investigate key={`${c.id}-${who.name}-${who.employeeId}`} clip={c} plan={plan} who={who} onResolved={reload} />}
                     </>
                   )}
                 </div>
