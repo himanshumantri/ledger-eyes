@@ -6,6 +6,7 @@ export type Clip = {
   id: string
   original_name: string
   captured_by: string | null
+  captured_by_id: string | null
   sha256: string
   size_bytes: number
   uploaded_at: string
@@ -20,7 +21,7 @@ export type Clip = {
   reasons: string[]
   has_evidence: boolean
   transcript: string
-  review: { reviewer: string; created_at: string; lines: { item: string; qty: number; note: string }[] } | null
+  review: { reviewer: string; reviewer_id: string | null; created_at: string; lines: { item: string; qty: number; note: string }[] } | null
 }
 
 export type PlanLine = { item: string; location: string; book_qty: number; unit_cost: number }
@@ -66,15 +67,16 @@ export function putPlan(file: File) {
   return request<{ lines: number; locations: number }>('/plan', { method: 'PUT', body: form })
 }
 
-export function uploadClip(file: File, sha256: string, capturedBy: string) {
+export function uploadClip(file: File, sha256: string, who: { name: string; employeeId: string }) {
   const form = new FormData()
   form.append('file', file)
   form.append('client_sha256', sha256)
-  form.append('captured_by', capturedBy)
+  form.append('captured_by', who.name.trim())
+  form.append('captured_by_id', who.employeeId.trim())
   return request<Clip>('/clips', { method: 'POST', body: form })
 }
 
-export function postReview(clipId: string, body: { reviewer: string; location?: string; lines: { item: string; qty: number; note: string }[] }) {
+export function postReview(clipId: string, body: { reviewer: string; reviewer_id: string; location?: string; lines: { item: string; qty: number; note: string }[] }) {
   return request<Clip>(`/clips/${clipId}/review`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -103,6 +105,7 @@ export type Investigation = {
   id: string
   clip_id: string
   reviewer: string
+  reviewer_id: string | null
   location: string | null
   status: 'open' | 'resolved'
   outcome: '' | 'confirmed' | 'unresolved'
@@ -123,11 +126,13 @@ const json = (method: string, body: unknown): RequestInit => ({
 })
 
 export const getInvestigations = (clipId: string) => request<Investigation[]>(`/clips/${clipId}/investigations`)
-export const startInvestigation = (clipId: string, reviewer: string, location?: string) =>
-  request<Investigation>(`/clips/${clipId}/investigations`, json('POST', { reviewer, location }))
+export const startInvestigation = (clipId: string, reviewer: string, reviewerId: string, location?: string) =>
+  request<Investigation>(`/clips/${clipId}/investigations`, json('POST', { reviewer, reviewer_id: reviewerId, location }))
 export const addClick = (id: string, x: number, y: number) => request<Investigation>(`/investigations/${id}/clicks`, json('POST', { x, y }))
-export const drawBox = (id: string, box: [number, number, number, number], objectId?: number) =>
-  request<Investigation>(`/investigations/${id}/boxes`, json('POST', { box, object_id: objectId }))
+export type Corner = { x: number; y: number }
+export const drawBox = (id: string, box: [number, number, number, number], corners: Corner[], objectId?: number) =>
+  request<Investigation>(`/investigations/${id}/boxes`, json('POST', { box, corners: corners.map((c) => [c.x, c.y]), object_id: objectId }))
+export const deleteObject = (id: string, objId: number) => request<Investigation>(`/investigations/${id}/objects/${objId}`, { method: 'DELETE' })
 export const patchObject =(id: string, objId: number, body: { included?: boolean; item?: string }) =>
   request<Investigation>(`/investigations/${id}/objects/${objId}`, json('PATCH', body))
 export const resolveInvestigation = (id: string, outcome: 'confirmed' | 'unresolved', note: string) =>

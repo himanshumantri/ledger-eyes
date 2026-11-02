@@ -94,11 +94,13 @@ def test_click_adds_the_object_under_the_point(env, sam):
 def test_a_drawn_box_adds_a_carton_outlined_by_sam(env, sam):
     client, clip_id = env
     inv = start(client, clip_id).json()
-    after = client.post(f"/investigations/{inv['id']}/boxes", json={"box": [20, 200, 120, 260]}).json()
+    corners = [[20, 200], [120, 200], [120, 260], [20, 260]]
+    after = client.post(f"/investigations/{inv['id']}/boxes", json={"box": [20, 200, 120, 260], "corners": corners}).json()
     added = after["objects"][-1]
     assert (added["id"], added["source"], added["box"], added["conf"], added["included"]) == (100, "drawn", [22, 202, 118, 258], 0.93, True)
     assert sam.calls[-1] == "<0f>1<|box;x1=20;y1=200;x2=120;y2=260;w=200;h=300|>"
     assert after["events"][-1]["action"] == "box_added" and after["events"][-1]["detail"]["drawn"] == [20, 200, 120, 260]
+    assert after["events"][-1]["detail"]["corners"] == corners
     # a clicked carton after a drawn one still gets a fresh id
     assert client.post(f"/investigations/{inv['id']}/clicks", json={"x": 100, "y": 100}).json()["objects"][-1]["id"] == 101
 
@@ -128,6 +130,29 @@ def test_drawn_boxes_are_validated(env, sam):
     sam.nothing_at_click = True
     assert client.post(url, json={"box": [10, 10, 80, 80]}).status_code == 422  # SAM outlined nothing
     assert len(client.get(f"/investigations/{inv['id']}").json()["objects"]) == 3
+
+
+def test_a_deleted_box_is_gone_but_stays_in_the_log(env, sam):
+    client, clip_id = env
+    sam.sixteen = False
+    inv = start(client, clip_id).json()
+    url = f"/investigations/{inv['id']}"
+    after = client.delete(f"{url}/objects/2").json()
+    assert [o["id"] for o in after["objects"]] == [0, 1]
+    last = after["events"][-1]
+    assert last["action"] == "object_deleted" and last["detail"]["box"] == [10, 130, 90, 180] and last["detail"]["conf"] == 0.62
+    assert client.delete(f"{url}/objects/2").status_code == 404
+    client.post(f"{url}/resolve", json={"outcome": "unresolved"})
+    assert client.delete(f"{url}/objects/1").status_code == 409
+
+
+def test_deleting_boxes_does_not_hide_that_sam_hit_its_limit(env, sam):
+    client, clip_id = env
+    sam.sixteen = True
+    inv = start(client, clip_id).json()
+    for i in range(3):
+        inv = client.delete(f"/investigations/{inv['id']}/objects/{i}").json()
+    assert inv["capped"] is True and len(inv["objects"]) == 13
 
 
 def test_edits_are_logged_and_validated(env):

@@ -1,23 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  API, addClick, drawBox, getInvestigations, patchObject, resolveInvestigation, startInvestigation,
-  type Clip, type Investigation, type Plan,
+  API, deleteObject, drawBox, getInvestigations, patchObject, resolveInvestigation, startInvestigation,
+  type Clip, type Corner, type InvObject, type Investigation, type Plan,
 } from '../api'
+import { whoProblem, type Who } from '../roles'
 
-type Mode = { kind: 'click' } | { kind: 'draw' } | { kind: 'redraw'; id: number }
-type Drag = { x0: number; y0: number; x1: number; y1: number }
-const MIN_DRAG = 12 // image pixels; a shorter drag is a slip, not a box
+type Mode = { kind: 'add' } | { kind: 'redraw'; id: number }
+const MIN_SIDE = 12 // image pixels; corners closer than this are a slip, not a carton
 
-/** Work on a clip's frame with SAM: include or exclude proposed cartons, click ones it missed, say which item each is. */
-export default function Investigate({ clip, plan, name, onResolved }: { clip: Clip; plan: Plan; name: string; onResolved: () => void }) {
+/** Work on a clip's frame: include or exclude proposed cartons, redraw or delete a wrong one, add one it missed, say which item each is. */
+export default function Investigate({ clip, plan, who, onResolved }: { clip: Clip; plan: Plan; who: Who; onResolved: () => void }) {
   const [inv, setInv] = useState<Investigation | null>(null)
-  const [reviewer, setReviewer] = useState(name)
   const [location, setLocation] = useState(clip.location ?? '')
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [mode, setMode] = useState<Mode | null>(null)
-  const [drag, setDrag] = useState<Drag | null>(null)
+  const [corners, setCorners] = useState<Corner[]>([]) // the top-left corner, then the bottom-right one
+  const [hover, setHover] = useState<Corner | null>(null)
   const img = useRef<HTMLImageElement>(null)
 
   useEffect(() => {
@@ -43,11 +43,24 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
     }
   }
 
+  function begin(next: Mode) {
+    setError('')
+    setCorners([])
+    setMode(next)
+  }
+
+  function stop() {
+    setMode(null)
+    setCorners([])
+    setHover(null)
+  }
+
   if (!inv) {
+    const problem = whoProblem(who)
     return (
       <div className="review">
         <h4>Correct real footage</h4>
-        <p className="hint">It proposes the cartons on this clip's frame. You include or exclude each one, click any it missed, and say which item each is.</p>
+        <p className="hint">It proposes the cartons on this clip's frame. You include or exclude each one, redraw or delete a wrong box, add any it missed, and say which item each is.</p>
         {!clip.location && (
           <label>
             Location
@@ -59,14 +72,13 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
             </select>
           </label>
         )}
-        <label>
-          Reviewer
-          <input value={reviewer} onChange={(e) => setReviewer(e.target.value)} />
-        </label>
-        {error && <p className="warn">{error}</p>}
+        <p className="hint">
+          Recorded as {who.name.trim() || '(name missing)'}, ID {who.employeeId.trim() || '(missing)'}.
+        </p>
+        {(problem || error) && <p className="warn">{problem || error}</p>}
         <button
-          disabled={busy || !reviewer.trim()}
-          onClick={() => void run(() => startInvestigation(clip.id, reviewer.trim(), clip.location ? undefined : location || undefined))}
+          disabled={busy || !!problem}
+          onClick={() => void run(() => startInvestigation(clip.id, who.name.trim(), who.employeeId.trim(), clip.location ? undefined : location || undefined))}
         >
           {busy ? 'Looking at the frame…' : 'Start'}
         </button>
@@ -78,81 +90,69 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
   const book = (item: string) => plan.lines.find((l) => l.location === inv.location && l.item === item)?.book_qty ?? 0
   const shown = [...new Set([...items, ...Object.keys(inv.counts.per_item)])]
   const open = inv.status === 'open'
+  const marked = (o: InvObject) => o.source !== 'auto' || !!o.adjusted // a box the reviewer drew: its confidence is not meaningful
 
-  const toImage = (e: React.PointerEvent, inv: Investigation) => {
-    const r = img.current!.getBoundingClientRect()
-    const at = (v: number, size: number, shown: number) => Math.min(size - 1, Math.max(0, Math.round((v / shown) * size)))
+  function toImage(e: React.PointerEvent<HTMLDivElement>): Corner | null {
+    if (!img.current || !inv) return null
+    const r = img.current.getBoundingClientRect()
+    const at = (v: number, size: number, shownSize: number) => Math.min(size - 1, Math.max(0, Math.round((v / shownSize) * size)))
     return { x: at(e.clientX - r.left, inv.frame_w, r.width), y: at(e.clientY - r.top, inv.frame_h, r.height) }
   }
 
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (mode && corners.length === 1) setHover(toImage(e))
+  }
+
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (!mode || !img.current || !inv) return
-    const { x, y } = toImage(e, inv)
-    if (mode.kind === 'click') {
-      setMode(null)
-      void run(() => addClick(inv.id, x, y))
+    const point = toImage(e)
+    if (!mode || !point || !inv || busy) return
+    if (corners.length === 0) {
+      setCorners([point])
       return
     }
-    e.currentTarget.setPointerCapture(e.pointerId)
-    setDrag({ x0: x, y0: y, x1: x, y1: y })
-  }
-
-  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (!drag || !inv) return
-    const { x, y } = toImage(e, inv)
-    setDrag({ ...drag, x1: x, y1: y })
-  }
-
-  function onPointerUp() {
-    if (!drag || !mode || mode.kind === 'click' || !inv) return
-    const box: [number, number, number, number] = [Math.min(drag.x0, drag.x1), Math.min(drag.y0, drag.y1), Math.max(drag.x0, drag.x1), Math.max(drag.y0, drag.y1)]
-    setDrag(null)
-    if (box[2] - box[0] < MIN_DRAG || box[3] - box[1] < MIN_DRAG) {
-      setError('Drag a box around the whole carton.')
+    // Two corners in: the box between them goes to SAM, which outlines the carton inside it.
+    const both = [corners[0], point]
+    const box: [number, number, number, number] = [
+      Math.min(both[0].x, both[1].x), Math.min(both[0].y, both[1].y), Math.max(both[0].x, both[1].x), Math.max(both[0].y, both[1].y),
+    ]
+    if (box[2] - box[0] < MIN_SIDE || box[3] - box[1] < MIN_SIDE) {
+      setCorners([])
+      setHover(null)
+      setError('Those two corners are too close together. Click the top-left and then the bottom-right corner of the carton.')
       return
     }
     const target = mode.kind === 'redraw' ? mode.id : undefined
-    setMode(null)
-    void run(() => drawBox(inv.id, box, target))
+    stop()
+    void run(() => drawBox(inv.id, box, both, target))
   }
 
-  const instruction =
-    mode?.kind === 'click' ? 'Click the carton on the picture.'
-    : mode?.kind === 'draw' ? 'Drag a box around the carton on the picture.'
-    : mode?.kind === 'redraw' ? `Drag a new box around carton ${mode.id} on the picture.`
-    : ''
+  const instruction = `${mode?.kind === 'redraw' ? `Redrawing carton ${mode.id}. ` : ''}${corners.length === 0 ? 'Click the top-left corner of the carton.' : 'Now click the bottom-right corner.'}`
+  const preview =
+    corners.length === 1 && hover
+      ? { x: Math.min(corners[0].x, hover.x), y: Math.min(corners[0].y, hover.y), w: Math.abs(hover.x - corners[0].x), h: Math.abs(hover.y - corners[0].y) }
+      : null
 
   return (
     <div className="investigate">
       <h4>Correcting {inv.location ?? 'an unknown location'}</h4>
       <p className="hint">
-        Machine count was {inv.machine_count}. Green: counted. Orange, dashed: it was unsure, so it starts excluded. Blue: a carton you added. Use Redraw if its box is wrong.
+        It confirmed {inv.machine_count} on its own. Green: counted. Orange, dashed: it was unsure, so it starts excluded. Blue: a carton you added.
+        Use Redraw if a box is wrong and Delete if it is not a carton at all.
       </p>
-      {inv.capped && <p className="warn">It outlined its maximum of 16 cartons, so more may exist. Draw or click any it missed.</p>}
-      <div
-        className={`frame${mode ? ' placing' : ''}`}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={() => setDrag(null)}
-      >
+      {inv.capped && <p className="warn">It outlined its maximum of 16 cartons, so more may exist. Add any it missed.</p>}
+      <div className={`frame${mode ? ' placing' : ''}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove}>
         <img ref={img} src={`${API}/investigations/${inv.id}/frame`} alt="The clip's frame with the proposed cartons outlined" />
         <svg viewBox={`0 0 ${inv.frame_w} ${inv.frame_h}`} preserveAspectRatio="none" aria-hidden="true">
           {inv.objects.map((o) => (
-            <g key={o.id} className={`obj ${o.source} ${o.included ? 'in' : 'out'}${o.included && o.conf < 0.8 ? ' weak' : ''}${mode?.kind === 'redraw' && mode.id === o.id ? ' target' : ''}`}>
+            <g key={o.id} className={`obj ${o.source} ${o.included ? 'in' : 'out'}${o.included && o.conf < 0.8 && !marked(o) ? ' weak' : ''}${mode?.kind === 'redraw' && mode.id === o.id ? ' target' : ''}`}>
               <rect x={o.box[0]} y={o.box[1]} width={o.box[2] - o.box[0]} height={o.box[3] - o.box[1]} />
               <text x={o.box[0] + 6} y={o.box[1] + 22}>{o.id}</text>
             </g>
           ))}
-          {drag && (
-            <rect
-              className="draft"
-              x={Math.min(drag.x0, drag.x1)}
-              y={Math.min(drag.y0, drag.y1)}
-              width={Math.abs(drag.x1 - drag.x0)}
-              height={Math.abs(drag.y1 - drag.y0)}
-            />
-          )}
+          {preview && <rect className="draft" x={preview.x} y={preview.y} width={preview.w} height={preview.h} />}
+          {corners.map((c, i) => (
+            <circle key={i} className="vertex" cx={c.x} cy={c.y} r={9} />
+          ))}
         </svg>
       </div>
       {open && (
@@ -160,12 +160,12 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
           {mode ? (
             <>
               {instruction}{' '}
-              <button onClick={() => { setMode(null); setDrag(null) }}>Cancel</button>
+              {corners.length > 0 && <button onClick={() => { setCorners([]); setHover(null) }}>Undo corner</button>}{' '}
+              <button onClick={stop}>Cancel</button>
             </>
           ) : (
             <>
-              <button disabled={busy} onClick={() => { setError(''); setMode({ kind: 'draw' }) }}>Draw a carton it missed</button>{' '}
-              <button disabled={busy} onClick={() => { setError(''); setMode({ kind: 'click' }) }}>Click a carton it missed</button>
+              <button disabled={busy} onClick={() => begin({ kind: 'add' })}>Add a carton</button>
             </>
           )}
         </p>
@@ -184,7 +184,7 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
         <tbody>
           {inv.objects.map((o) => (
             <tr key={o.id}>
-              <td>{o.id}{o.source === 'click' ? ' (clicked)' : o.source === 'drawn' ? ' (drawn)' : o.adjusted ? ' (redrawn)' : ''}</td>
+              <td>{o.id}{o.source === 'click' ? ' (clicked)' : o.source === 'drawn' ? ' (added)' : o.adjusted ? ' (redrawn)' : ''}</td>
               <td>
                 <input
                   type="checkbox"
@@ -207,10 +207,20 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
                   ))}
                 </select>
               </td>
-              <td className="num">{o.conf.toFixed(2)}</td>
-              <td>
-                <button disabled={!open || busy || !!mode} onClick={() => { setError(''); setMode({ kind: 'redraw', id: o.id }) }}>
+              <td className="num">{marked(o) ? 'you marked it' : o.conf.toFixed(2)}</td>
+              <td className="actions">
+                <button disabled={!open || busy || !!mode} onClick={() => begin({ kind: 'redraw', id: o.id })}>
                   Redraw
+                </button>{' '}
+                <button
+                  className="danger"
+                  disabled={!open || busy || !!mode}
+                  aria-label={`Delete box ${o.id}`}
+                  onClick={() => {
+                    if (window.confirm(`Delete box ${o.id}? Use the tick box instead if you only want to leave it out of the count.`)) void run(() => deleteObject(inv.id, o.id))
+                  }}
+                >
+                  Delete
                 </button>
               </td>
             </tr>
@@ -241,7 +251,7 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
         </tbody>
       </table>
       {inv.counts.unassigned > 0 && <p className="warn">{inv.counts.unassigned} counted carton(s) still need an item.</p>}
-      <p className="hint">This is what is visible in this one picture. Cartons hidden behind others are not counted.</p>
+      <p className="hint">Mark only the part you can see. Count a carton if more than half of it is visible. Cartons hidden behind others are not counted.</p>
       {open && (
         <div className="review">
           <label>

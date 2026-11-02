@@ -46,6 +46,7 @@ class Clip(Base):
     # Set by a reviewer when the narration did not name a recognisable location
     review_location: Mapped[str | None] = mapped_column(String(100), default=None)
     captured_by: Mapped[str | None] = mapped_column(String(200), default=None)  # the capturer, who may not review this clip
+    captured_by_id: Mapped[str | None] = mapped_column(String(100), default=None)  # their employee ID
 
 
 class Blob(Base):
@@ -64,6 +65,7 @@ class Investigation(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     clip_id: Mapped[str] = mapped_column(ForeignKey("clips.id"), index=True)
     reviewer: Mapped[str] = mapped_column(String(200))
+    reviewer_id: Mapped[str | None] = mapped_column(String(100), default=None)  # employee ID
     location: Mapped[str | None] = mapped_column(String(100), default=None)
     created_at: Mapped[datetime] = mapped_column(default=_now)
     status: Mapped[str] = mapped_column(String(20), default="open")  # open | resolved
@@ -97,5 +99,6 @@ class Review(Base):
     item: Mapped[str] = mapped_column(String(200))
     qty: Mapped[int]
     reviewer: Mapped[str] = mapped_column(String(200))
+    reviewer_id: Mapped[str | None] = mapped_column(String(100), default=None)  # employee ID
     note: Mapped[str] = mapped_column(String(1000), default="")
     created_at: Mapped[datetime] = mapped_column(default=_now)
