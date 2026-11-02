@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  API, deleteObject, drawBox, getInvestigations, patchObject, resolveInvestigation, startInvestigation,
+  API, deleteObject, drawBox, getInvestigations, patchObject, previewUrl, resolveInvestigation, startFromFrame, startInvestigation,
   type Clip, type Corner, type InvObject, type Investigation, type Plan,
 } from '../api'
 import { whoProblem, type Who } from '../roles'
@@ -19,6 +19,8 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
   const [corners, setCorners] = useState<Corner[]>([]) // the top-left corner, then the bottom-right one
   const [hover, setHover] = useState<Corner | null>(null)
   const img = useRef<HTMLImageElement>(null)
+  const video = useRef<HTMLVideoElement>(null)
+  const [at, setAt] = useState(0) // seconds into the video where it is paused
 
   useEffect(() => {
     let live = true
@@ -43,6 +45,30 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
     }
   }
 
+  /** Take the exact frame the video is paused on and start from it. */
+  async function useThisFrame() {
+    const v = video.current
+    if (!v || !v.videoWidth) {
+      setError('Play the video, then pause it on the moment you want to correct.')
+      return
+    }
+    v.pause()
+    await run(async () => {
+      let image: Blob | null = null
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = v.videoWidth
+        canvas.height = v.videoHeight
+        canvas.getContext('2d')?.drawImage(v, 0, 0)
+        image = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+      } catch {
+        image = null
+      }
+      if (!image) throw new Error('The browser would not let this page take the picture. Use the frame it picked instead.')
+      return startFromFrame(clip.id, image, Math.round(v.currentTime * 1000), who, clip.location ? undefined : location || undefined)
+    })
+  }
+
   function begin(next: Mode) {
     setError('')
     setCorners([])
@@ -60,7 +86,31 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
     return (
       <div className="review">
         <h4>Correct real footage</h4>
-        <p className="hint">It proposes the cartons on this clip's frame. You include or exclude each one, redraw or delete a wrong box, add any it missed, and say which item each is.</p>
+        {clip.preview === 'ready' ? (
+          <>
+            <p className="hint">
+              Play the video and pause it on the moment you want to correct, then press Use this frame. It will outline the cartons on that exact
+              picture. Paused at <strong>{Math.floor(at / 60)}:{String(Math.floor(at) % 60).padStart(2, '0')}</strong>.
+            </p>
+            <video
+              ref={video}
+              className="clipvideo"
+              src={previewUrl(clip.id)}
+              controls
+              playsInline
+              preload="metadata"
+              crossOrigin="anonymous"
+              onTimeUpdate={(e) => setAt(e.currentTarget.currentTime)}
+              onSeeked={(e) => setAt(e.currentTarget.currentTime)}
+            />
+          </>
+        ) : (
+          <p className="hint">
+            It proposes the cartons on this clip's frame. You include or exclude each one, redraw or delete a wrong box, add any it missed, and say which
+            item each is.
+            {clip.preview === 'pending' && ' The video is still being prepared, so you can start from the frame it picked now.'}
+          </p>
+        )}
         {!clip.location && (
           <label>
             Location
@@ -76,11 +126,18 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
           Recorded as {who.name.trim() || '(name missing)'}, ID {who.employeeId.trim() || '(missing)'}.
         </p>
         {(problem || error) && <p className="warn">{problem || error}</p>}
+        {clip.preview === 'ready' && (
+          <>
+            <button className="primary" disabled={busy || !!problem} onClick={() => void useThisFrame()}>
+              {busy ? 'Looking at the frame…' : 'Use this frame'}
+            </button>{' '}
+          </>
+        )}
         <button
           disabled={busy || !!problem}
           onClick={() => void run(() => startInvestigation(clip.id, who.name.trim(), who.employeeId.trim(), clip.location ? undefined : location || undefined))}
         >
-          {busy ? 'Looking at the frame…' : 'Start'}
+          {busy ? 'Looking at the frame…' : clip.preview === 'ready' ? 'Use the frame it picked' : 'Start'}
         </button>
       </div>
     )

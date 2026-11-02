@@ -4,6 +4,9 @@ import { whoProblem, type Who } from '../roles'
 
 type Step = 'idle' | 'hashing' | 'uploading' | 'sent' | 'error'
 
+// Hashing reads the whole file into the browser's memory, which a phone may not manage for a big video. The server hashes it anyway.
+const BIG_FILE = 150 * 1024 * 1024
+
 const minutes = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`
 
 export default function CaptureView({
@@ -13,6 +16,7 @@ export default function CaptureView({
   const [error, setError] = useState('')
   const [sent, setSent] = useState<Clip | null>(null)
   const [hidden, setHidden] = useState(false)
+  const [skippedHash, setSkippedHash] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
   // The server reports queued, running and done, not a percentage, so the bar is a moving indicator with the time spent.
@@ -40,7 +44,8 @@ export default function CaptureView({
     setHidden(false)
     try {
       setStep('hashing')
-      const hash = await sha256Hex(file)
+      const hash = file.size > BIG_FILE ? null : await sha256Hex(file)
+      setSkippedHash(hash === null)
       setStep('uploading')
       setSent(await uploadClip(file, hash, who))
       setNow(Date.now())
@@ -68,6 +73,7 @@ export default function CaptureView({
           Say the location first, for example <em>"Aisle A1, shelf B2"</em>, then the item names.
         </li>
         <li>Keep every carton in view and do not cover labels.</li>
+        <li>A video can be up to 8 minutes, filmed at 30 frames per second (a phone set to 60 fps reaches the limit in 4 minutes). Film at 720p so a long video stays small enough to upload. Counting takes about one and a half times the length of the video.</li>
       </ol>
       <input
         type="file"
@@ -82,8 +88,9 @@ export default function CaptureView({
       {step === 'error' && <p className="warn">{error}</p>}
       {step === 'sent' && live && (
         <p role="status">
-          Received <strong>{live.original_name}</strong> ({(live.size_bytes / 1e6).toFixed(1)} MB). The server confirmed the same fingerprint:{' '}
+          Received <strong>{live.original_name}</strong> ({(live.size_bytes / 1e6).toFixed(1)} MB). {skippedHash ? 'The server fingerprint:' : 'The server confirmed the same fingerprint:'}{' '}
           <code>{live.sha256.slice(0, 12)}…</code>.
+          {skippedHash && ' The video is large, so the device did not fingerprint it; the server did.'}
         </p>
       )}
 
@@ -106,8 +113,9 @@ export default function CaptureView({
                   <span />
                 </div>
                 <p className="hint">
-                  {live.original_name} · {minutes(now - new Date(live.uploaded_at).getTime())} so far. This can take a minute or two. You can hide
-                  this; the count carries on.
+                  {live.original_name} · {minutes(now - new Date(live.uploaded_at).getTime())} so far.
+                  {live.duration_seconds ? ` Counting takes about ${minutes(live.duration_seconds * 1000 * 1.5 + 60000)} for a video this long (measured: about 1.4 times its length, plus a minute for the narration).` : ' This can take a minute or two.'}{' '}
+                  You can hide this; the count carries on.
                 </p>
                 <button onClick={() => setHidden(true)}>Hide this</button>
               </>

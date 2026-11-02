@@ -26,18 +26,29 @@ def spoken_location(text: str) -> dict[int, int]:
     """The aisle (slot 0) and shelf (slot 1) numbers said in the narration; a slot not said is absent."""
     said: dict[int, int] = {}
     pending: int | None = None
-    for token in re.findall(r"[a-z]+\d*|\d+", text.lower()):
+    in_location = False  # inside "shelf A1 B2": a letter on its own followed by a number is then a tag too
+    skip = False
+    tokens = re.findall(r"[a-z]+\d*|\d+", text.lower())
+    for i, token in enumerate(tokens):
+        if skip:
+            skip = False
+            continue
+        following = tokens[i + 1] if i + 1 < len(tokens) else ""
         tagged = re.fullmatch(r"([ab])(\d+)", token)
         if tagged:  # "A1", "B2": the letter says which slot
             said.setdefault(_LETTER_SLOT[tagged.group(1)], int(tagged.group(2)))
-            pending = None
+            pending, in_location = None, True
+        elif in_location and token in _LETTER_SLOT and _number(following) is not None:
+            # On long recordings the transcript sometimes spaces the letter from its number: "A 1 B 4".
+            said.setdefault(_LETTER_SLOT[token], _number(following))
+            pending, skip = None, True
         elif token in _WORD_SLOT:
-            pending = _WORD_SLOT[token]
+            pending, in_location = _WORD_SLOT[token], True
         elif pending is not None and _number(token) is not None:
             said.setdefault(pending, _number(token))
             pending = None
         elif token not in _FILLER:
-            pending = None
+            pending, in_location = None, False
     return said
 
 

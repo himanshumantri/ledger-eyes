@@ -31,6 +31,7 @@ class Clip(Base):
     original_name: Mapped[str] = mapped_column(String(300))
     sha256: Mapped[str] = mapped_column(String(64))
     size_bytes: Mapped[int]
+    duration_seconds: Mapped[float | None] = mapped_column(default=None)  # length of the video, when ffprobe could read it
     uploaded_at: Mapped[datetime] = mapped_column(default=_now, index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued")  # queued | running | done | failed
     error: Mapped[str] = mapped_column(String(2000), default="")
@@ -47,6 +48,8 @@ class Clip(Base):
     review_location: Mapped[str | None] = mapped_column(String(100), default=None)
     captured_by: Mapped[str | None] = mapped_column(String(200), default=None)  # the capturer, who may not review this clip
     captured_by_id: Mapped[str | None] = mapped_column(String(100), default=None)  # their employee ID
+    # The playable preview copy, made after counting: None = not made yet, "" = could not be made, else its path under the data folder
+    preview: Mapped[str | None] = mapped_column(String(500), default=None)
 
 
 class Blob(Base):

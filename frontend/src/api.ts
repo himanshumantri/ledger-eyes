@@ -9,6 +9,7 @@ export type Clip = {
   captured_by_id: string | null
   sha256: string
   size_bytes: number
+  duration_seconds: number | null
   uploaded_at: string
   finished_at: string | null
   status: 'queued' | 'running' | 'done' | 'failed'
@@ -20,6 +21,7 @@ export type Clip = {
   needs_review: boolean
   reasons: string[]
   has_evidence: boolean
+  preview: 'ready' | 'pending' | 'none' // the playable copy of the video
   transcript: string
   review: { reviewer: string; reviewer_id: string | null; created_at: string; lines: { item: string; qty: number; note: string }[] } | null
 }
@@ -57,6 +59,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export const previewUrl = (clipId: string) => `${API}/clips/${clipId}/preview`
+
 export const getPlan = () => request<Plan>('/plan')
 export const getClips = () => request<Clip[]>('/clips')
 export const getReconciliation = () => request<Row[]>('/reconciliation')
@@ -67,10 +71,10 @@ export function putPlan(file: File) {
   return request<{ lines: number; locations: number }>('/plan', { method: 'PUT', body: form })
 }
 
-export function uploadClip(file: File, sha256: string, who: { name: string; employeeId: string }) {
+export function uploadClip(file: File, sha256: string | null, who: { name: string; employeeId: string }) {
   const form = new FormData()
   form.append('file', file)
-  form.append('client_sha256', sha256)
+  if (sha256) form.append('client_sha256', sha256)
   form.append('captured_by', who.name.trim())
   form.append('captured_by_id', who.employeeId.trim())
   return request<Clip>('/clips', { method: 'POST', body: form })
@@ -137,3 +141,14 @@ export const patchObject =(id: string, objId: number, body: { included?: boolean
   request<Investigation>(`/investigations/${id}/objects/${objId}`, json('PATCH', body))
 export const resolveInvestigation = (id: string, outcome: 'confirmed' | 'unresolved', note: string) =>
   request<Investigation>(`/investigations/${id}/resolve`, json('POST', { outcome, note }))
+
+/** Start on a frame the reviewer paused the video on: the page sends that exact frame as a picture. */
+export function startFromFrame(clipId: string, image: Blob, atMs: number, who: { name: string; employeeId: string }, location?: string) {
+  const form = new FormData()
+  form.append('file', image, 'frame.png')
+  form.append('at_ms', String(atMs))
+  form.append('reviewer', who.name.trim())
+  form.append('reviewer_id', who.employeeId.trim())
+  if (location) form.append('location', location)
+  return request<Investigation>(`/clips/${clipId}/investigations/from-frame`, { method: 'POST', body: form })
+}

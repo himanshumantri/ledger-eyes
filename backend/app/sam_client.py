@@ -14,7 +14,7 @@ def cache_path(video: Path, phrase: str) -> Path:
 def segment_video(video: Path, phrase: str) -> str:
     """Raw SAM output (one line per frame). Cached by clip and phrase; parse with app.segmentation."""
     cache = cache_path(video, phrase)
-    if cache.exists():
+    if cache.exists() and cache.stat().st_size > 0:  # an empty file is a failed call, never an answer
         return cache.read_text(encoding="utf-8")
 
     with video.open("rb") as fh:
@@ -30,15 +30,22 @@ def segment_video(video: Path, phrase: str) -> str:
         "stream": True,
     }
     deltas: list[str] = []
+    seen: set[str] = set()
     with httpx.stream("POST", f"{BASE_URL}/responses", headers=auth_headers(), json=body, timeout=600) as resp:
         if resp.status_code != 200:
             raise RuntimeError(f"SAM request failed: {resp.status_code} {resp.read().decode()[:300]}")
         for line in resp.iter_lines():
             if line.startswith("data:") and line[5:].strip() not in ("", "[DONE]"):
                 event = json.loads(line[5:])
-                if event.get("type") == "response.output_text.delta":
+                kind = str(event.get("type", ""))
+                seen.add(kind)
+                if kind == "response.output_text.delta":
                     deltas.append(event["delta"])
+                elif event.get("error") or "fail" in kind or "error" in kind:
+                    raise RuntimeError(f"SAM reported a problem: {json.dumps(event)[:500]}")
     raw = "".join(deltas)
+    if not raw.strip():  # a 9.5-minute video once came back empty after 32 s, which looked like success and was cached
+        raise RuntimeError(f"SAM returned no output (stream events seen: {sorted(seen)[:8]}). The video may be too long for it.")
     OUT.mkdir(parents=True, exist_ok=True)
     cache.write_text(raw, encoding="utf-8")
     return raw
