@@ -1,3 +1,5 @@
+import { plain } from './plain'
+
 export const API: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
 export type Clip = {
@@ -49,7 +51,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* keep the status text */
     }
-    throw new Error(message)
+    throw new Error(plain(message))
   }
   return res.json() as Promise<T>
 }

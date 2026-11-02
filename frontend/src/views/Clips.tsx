@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { API, type Clip, type Plan } from '../api'
+import { plain } from '../plain'
 import type { Role } from '../roles'
 import Investigate from './Investigate'
 import ReviewForm from './ReviewForm'
@@ -35,18 +36,26 @@ export default function ClipsView({ clips, plan, role, name, reload }: { clips: 
               <button className="row" onClick={() => setOpen(isOpen ? null : c.id)} aria-expanded={isOpen}>
                 <span className="name">{c.original_name}</span>
                 <span>{c.location ?? 'location unknown'}</span>
-                <span className="num">{c.review ? c.review.lines.reduce((n, l) => n + l.qty, 0) : (c.machine_count ?? '–')}</span>
+                <span className="num">
+                  {c.review ? c.review.lines.reduce((n, l) => n + l.qty, 0) : c.needs_review ? '–' : (c.machine_count ?? '–')}
+                </span>
                 <span className={`tag ${st.tone}`}>{st.text}</span>
               </button>
               {isOpen && (
                 <div className="detail">
-                  {c.status === 'failed' && <p className="warn">{c.error}</p>}
+                  {c.status === 'failed' && <p className="warn">{plain(c.error)}</p>}
                   {c.reasons.length > 0 && (
                     <ul>
                       {c.reasons.map((r) => (
-                        <li key={r}>{r}</li>
+                        <li key={r}>{plain(r)}</li>
                       ))}
                     </ul>
+                  )}
+                  {c.status === 'done' && c.needs_review && !c.review && (
+                    <p className="hint">
+                      Not counted yet. Cartons it could not confirm are left out, so a reviewer's count is needed
+                      {c.machine_count ? ` (it confirmed ${c.machine_count} on its own)` : ''}.
+                    </p>
                   )}
                   {c.transcript && <p className="hint">Narration: “{c.transcript}”</p>}
                   <p className="hint">
@@ -55,7 +64,19 @@ export default function ClipsView({ clips, plan, role, name, reload }: { clips: 
                   {c.has_evidence && (
                     <figure>
                       <img src={`${API}/clips/${c.id}/evidence`} alt="Evidence frame with the counted cartons outlined" />
-                      <figcaption>Green: counted. Orange: disputed. Blue ?: carton without a box.</figcaption>
+                      <figcaption>
+                        <ul className="legend">
+                          <li>
+                            <i className="swatch" style={{ background: '#2e9e4f' }} /> Green: outlined and confirmed, so it is counted.
+                          </li>
+                          <li>
+                            <i className="swatch" style={{ background: '#f58231' }} /> Orange: outlined, but it could not confirm it. Not counted.
+                          </li>
+                          <li>
+                            <i className="swatch" style={{ background: '#1f6feb' }} /> Blue ?: a carton it sees but has not outlined. Not counted.
+                          </li>
+                        </ul>
+                      </figcaption>
                     </figure>
                   )}
                   {c.review && (

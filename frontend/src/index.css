@@ -256,6 +256,21 @@ figcaption {
   font-size: 0.85rem;
 }
 
+.legend {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
 .review {
   display: grid;
   gap: 8px;

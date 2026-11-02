@@ -42,7 +42,7 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
     return (
       <div className="review">
         <h4>Correct real footage</h4>
-        <p className="hint">SAM proposes the cartons on this clip's frame. You include or exclude each one, click any it missed, and say which item each is.</p>
+        <p className="hint">It proposes the cartons on this clip's frame. You include or exclude each one, click any it missed, and say which item each is.</p>
         {!clip.location && (
           <label>
             Location
@@ -63,7 +63,7 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
           disabled={busy || !reviewer.trim()}
           onClick={() => void run(() => startInvestigation(clip.id, reviewer.trim(), clip.location ? undefined : location || undefined))}
         >
-          {busy ? 'Asking SAM…' : 'Start'}
+          {busy ? 'Looking at the frame…' : 'Start'}
         </button>
       </div>
     )
@@ -87,11 +87,11 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
     <div className="investigate">
       <h4>Correcting {inv.location ?? 'an unknown location'}</h4>
       <p className="hint">
-        Machine count was {inv.machine_count}. Green: counted. Orange: SAM was unsure, so it starts excluded. Blue: you clicked it.
+        Machine count was {inv.machine_count}. Green: counted. Orange, dashed: it was unsure, so it starts excluded. Blue: you clicked it.
       </p>
-      {inv.capped && <p className="warn">SAM returned its maximum of 16 objects, so more cartons may exist. Click any it missed.</p>}
+      {inv.capped && <p className="warn">It outlined its maximum of 16 cartons, so more may exist. Click any it missed.</p>}
       <div className={`frame${placing ? ' placing' : ''}`} onClick={onImageClick}>
-        <img ref={img} src={`${API}/investigations/${inv.id}/frame`} alt="The clip's frame with SAM's proposed cartons outlined" />
+        <img ref={img} src={`${API}/investigations/${inv.id}/frame`} alt="The clip's frame with the proposed cartons outlined" />
         <svg viewBox={`0 0 ${inv.frame_w} ${inv.frame_h}`} preserveAspectRatio="none" aria-hidden="true">
           {inv.objects.map((o) => (
             <g key={o.id} className={`obj ${o.source} ${o.included ? 'in' : 'out'}${o.included && o.conf < 0.8 ? ' weak' : ''}`}>
@@ -104,7 +104,7 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
       {open && (
         <p>
           <button disabled={busy} onClick={() => setPlacing(!placing)}>
-            {placing ? 'Click the carton on the picture… (cancel)' : 'Add a carton SAM missed'}
+            {placing ? 'Click the carton on the picture… (cancel)' : 'Add a carton it missed'}
           </button>
         </p>
       )}
@@ -114,7 +114,7 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
             <th>#</th>
             <th>Count it</th>
             <th>Item</th>
-            <th className="num">SAM confidence</th>
+            <th className="num">Confidence</th>
           </tr>
         </thead>
         <tbody>

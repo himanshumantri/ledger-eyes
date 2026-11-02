@@ -40,7 +40,7 @@ export default function ReviewForm({ clip, plan, name, onSaved }: { clip: Clip; 
     >
       <h4>{clip.review ? 'Change the review' : 'Your count'}</h4>
       <p className="hint">
-        Count each carton that is more than half visible. Machine count was {clip.machine_count}. Leave an item blank if none are on this shelf.
+        Count each carton that is more than half visible. It confirmed {clip.machine_count} on its own. Leave an item blank if none are on this shelf.
       </p>
       {!clip.location && (
         <label>
