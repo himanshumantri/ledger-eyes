@@ -10,8 +10,8 @@ const BIG_FILE = 150 * 1024 * 1024
 const minutes = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`
 
 export default function CaptureView({
-  hasPlan, who, clips, onUploaded, onGoToClips, onGoToReview,
-}: { hasPlan: boolean; who: Who; clips: Clip[]; onUploaded: () => void; onGoToClips: () => void; onGoToReview: (clipId: string) => void }) {
+  hasPlan, who, clips, onUploaded, onGoToClips,
+}: { hasPlan: boolean; who: Who; clips: Clip[]; onUploaded: () => void; onGoToClips: () => void }) {
   const [step, setStep] = useState<Step>('idle')
   const [error, setError] = useState('')
   const [sent, setSent] = useState<Clip | null>(null)
@@ -129,11 +129,6 @@ export default function CaptureView({
                       ? 'It needs a reviewer to count it.'
                       : `It counted ${live.machine_count ?? 0} at ${live.location ?? 'an unknown location'}.`}
                 </p>
-                {live.status === 'done' && live.needs_review && (
-                  <>
-                    <button className="primary" onClick={() => onGoToReview(live.id)}>Switch to Reviewer to count it</button>{' '}
-                  </>
-                )}
                 <button onClick={onGoToClips}>Go to Clips</button> <button onClick={() => setHidden(true)}>Close</button>
               </>
             )}
