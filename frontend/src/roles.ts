@@ -10,8 +10,8 @@ export const TABS: Record<Role, readonly string[]> = {
 
 export const BLURB: Record<Role, string> = {
   Capturer: 'Films each shelf and uploads it. Cannot review their own clips.',
-  Reviewer: 'Counts the clips the models flagged.',
-  Auditor: 'Compares counts with the books and corrects real footage to resolve a variance.',
+  Reviewer: 'Counts the clips it flagged, and corrects its boxes on the real footage so the counts match the stockroom.',
+  Auditor: 'Compares the counts with the books and follows each variance back to who counted it and the evidence.',
 }
 
 export const DEFAULT_NAME: Record<Role, string> = { Capturer: 'Capturer', Reviewer: 'Reviewer', Auditor: 'Auditor' }

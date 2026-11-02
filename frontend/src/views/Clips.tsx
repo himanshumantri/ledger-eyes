@@ -84,14 +84,14 @@ export default function ClipsView({ clips, plan, role, name, reload }: { clips: 
                       Reviewed by {c.review.reviewer}: {c.review.lines.map((l) => `${l.item} ${l.qty}`).join(', ')}
                     </p>
                   )}
-                  {c.status === 'done' && role === 'Auditor' && (
-                    <details className="inv">
-                      <summary>Correct real footage</summary>
-                      <Investigate key={`${c.id}-${name}`} clip={c} plan={plan} name={name} onResolved={reload} />
-                    </details>
-                  )}
                   {c.status === 'done' && role === 'Reviewer' && (
-                    <ReviewForm key={`${c.id}-${name}-${c.review?.created_at ?? 'new'}`} clip={c} plan={plan} name={name} onSaved={reload} />
+                    <>
+                      <ReviewForm key={`${c.id}-${name}-${c.review?.created_at ?? 'new'}`} clip={c} plan={plan} name={name} onSaved={reload} />
+                      <details className="inv">
+                        <summary>Correct real footage</summary>
+                        <Investigate key={`${c.id}-${name}`} clip={c} plan={plan} name={name} onResolved={reload} />
+                      </details>
+                    </>
                   )}
                 </div>
               )}

@@ -32,6 +32,9 @@ class FakeSam:
             return "<0f>" + ",".join([box(0, 10, 10, 90, 60, 0.95), box(1, 10, 70, 90, 120, 0.9), box(2, 10, 130, 90, 180, 0.62)])
         if self.nothing_at_click:
             return ""
+        if "<|box;" in prompt:  # a box the reviewer drew: SAM outlines the carton inside, a little tighter than the drawn box
+            x1, y1, x2, y2 = (int(prompt.split(f"{k}=")[1].split(";")[0].split("|")[0]) for k in ("x1", "y1", "x2", "y2"))
+            return "<0f>" + box(1, x1 + 2, y1 + 2, x2 - 2, y2 - 2, 0.93)
         x = int(prompt.split("x=")[1].split(";")[0])
         y = int(prompt.split("y=")[1].split(";")[0])
         return "<0f>" + box(1, x - 20, y - 15, x + 20, y + 15, 0.81)
@@ -86,6 +89,45 @@ def test_click_adds_the_object_under_the_point(env, sam):
     assert client.post(f"/investigations/{inv['id']}/clicks", json={"x": 500, "y": 5}).status_code == 422
     sam.nothing_at_click = True
     assert client.post(f"/investigations/{inv['id']}/clicks", json={"x": 5, "y": 5}).status_code == 422
+
+
+def test_a_drawn_box_adds_a_carton_outlined_by_sam(env, sam):
+    client, clip_id = env
+    inv = start(client, clip_id).json()
+    after = client.post(f"/investigations/{inv['id']}/boxes", json={"box": [20, 200, 120, 260]}).json()
+    added = after["objects"][-1]
+    assert (added["id"], added["source"], added["box"], added["conf"], added["included"]) == (100, "drawn", [22, 202, 118, 258], 0.93, True)
+    assert sam.calls[-1] == "<0f>1<|box;x1=20;y1=200;x2=120;y2=260;w=200;h=300|>"
+    assert after["events"][-1]["action"] == "box_added" and after["events"][-1]["detail"]["drawn"] == [20, 200, 120, 260]
+    # a clicked carton after a drawn one still gets a fresh id
+    assert client.post(f"/investigations/{inv['id']}/clicks", json={"x": 100, "y": 100}).json()["objects"][-1]["id"] == 101
+
+
+def test_redrawing_a_box_replaces_it_and_keeps_the_decision(env):
+    client, clip_id = env
+    inv = start(client, clip_id).json()
+    url = f"/investigations/{inv['id']}"
+    client.patch(f"{url}/objects/1", json={"item": "keyboard"})
+    after = client.post(f"{url}/boxes", json={"box": [30, 60, 100, 130], "object_id": 1}).json()
+    redrawn = next(o for o in after["objects"] if o["id"] == 1)
+    assert (redrawn["box"], redrawn["conf"], redrawn["included"], redrawn["item"], redrawn["adjusted"]) == ([32, 62, 98, 128], 0.93, True, "keyboard", True)
+    assert len(after["objects"]) == 3
+    last = after["events"][-1]
+    assert last["action"] == "box_redrawn" and last["detail"]["was"] == [10, 70, 90, 120] and last["detail"]["object"] == 1
+
+
+def test_drawn_boxes_are_validated(env, sam):
+    client, clip_id = env
+    inv = start(client, clip_id).json()
+    url = f"/investigations/{inv['id']}/boxes"
+    assert client.post(url, json={"box": [0, 0, 300, 100]}).status_code == 422  # outside the frame
+    assert client.post(url, json={"box": [50, 50, 50, 90]}).status_code == 422  # no width
+    assert client.post(url, json={"box": [50, 50, 54, 54]}).status_code == 422  # too small
+    assert client.post(url, json={"box": [1, 2, 3]}).status_code == 422
+    assert client.post(url, json={"box": [10, 10, 80, 80], "object_id": 99}).status_code == 404
+    sam.nothing_at_click = True
+    assert client.post(url, json={"box": [10, 10, 80, 80]}).status_code == 422  # SAM outlined nothing
+    assert len(client.get(f"/investigations/{inv['id']}").json()["objects"]) == 3
 
 
 def test_edits_are_logged_and_validated(env):

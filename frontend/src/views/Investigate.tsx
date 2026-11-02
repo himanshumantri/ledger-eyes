@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  API, addClick, getInvestigations, patchObject, resolveInvestigation, startInvestigation,
+  API, addClick, drawBox, getInvestigations, patchObject, resolveInvestigation, startInvestigation,
   type Clip, type Investigation, type Plan,
 } from '../api'
+
+type Mode = { kind: 'click' } | { kind: 'draw' } | { kind: 'redraw'; id: number }
+type Drag = { x0: number; y0: number; x1: number; y1: number }
+const MIN_DRAG = 12 // image pixels; a shorter drag is a slip, not a box
 
 /** Work on a clip's frame with SAM: include or exclude proposed cartons, click ones it missed, say which item each is. */
 export default function Investigate({ clip, plan, name, onResolved }: { clip: Clip; plan: Plan; name: string; onResolved: () => void }) {
@@ -12,7 +16,8 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [placing, setPlacing] = useState(false)
+  const [mode, setMode] = useState<Mode | null>(null)
+  const [drag, setDrag] = useState<Drag | null>(null)
   const img = useRef<HTMLImageElement>(null)
 
   useEffect(() => {
@@ -74,40 +79,98 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
   const shown = [...new Set([...items, ...Object.keys(inv.counts.per_item)])]
   const open = inv.status === 'open'
 
-  function onImageClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (!placing || !img.current || !inv) return
-    const r = img.current.getBoundingClientRect()
-    const x = Math.round(((e.clientX - r.left) / r.width) * inv.frame_w)
-    const y = Math.round(((e.clientY - r.top) / r.height) * inv.frame_h)
-    setPlacing(false)
-    void run(() => addClick(inv.id, x, y))
+  const toImage = (e: React.PointerEvent, inv: Investigation) => {
+    const r = img.current!.getBoundingClientRect()
+    const at = (v: number, size: number, shown: number) => Math.min(size - 1, Math.max(0, Math.round((v / shown) * size)))
+    return { x: at(e.clientX - r.left, inv.frame_w, r.width), y: at(e.clientY - r.top, inv.frame_h, r.height) }
   }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (!mode || !img.current || !inv) return
+    const { x, y } = toImage(e, inv)
+    if (mode.kind === 'click') {
+      setMode(null)
+      void run(() => addClick(inv.id, x, y))
+      return
+    }
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setDrag({ x0: x, y0: y, x1: x, y1: y })
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!drag || !inv) return
+    const { x, y } = toImage(e, inv)
+    setDrag({ ...drag, x1: x, y1: y })
+  }
+
+  function onPointerUp() {
+    if (!drag || !mode || mode.kind === 'click' || !inv) return
+    const box: [number, number, number, number] = [Math.min(drag.x0, drag.x1), Math.min(drag.y0, drag.y1), Math.max(drag.x0, drag.x1), Math.max(drag.y0, drag.y1)]
+    setDrag(null)
+    if (box[2] - box[0] < MIN_DRAG || box[3] - box[1] < MIN_DRAG) {
+      setError('Drag a box around the whole carton.')
+      return
+    }
+    const target = mode.kind === 'redraw' ? mode.id : undefined
+    setMode(null)
+    void run(() => drawBox(inv.id, box, target))
+  }
+
+  const instruction =
+    mode?.kind === 'click' ? 'Click the carton on the picture.'
+    : mode?.kind === 'draw' ? 'Drag a box around the carton on the picture.'
+    : mode?.kind === 'redraw' ? `Drag a new box around carton ${mode.id} on the picture.`
+    : ''
 
   return (
     <div className="investigate">
       <h4>Correcting {inv.location ?? 'an unknown location'}</h4>
       <p className="hint">
-        Machine count was {inv.machine_count}. Green: counted. Orange, dashed: it was unsure, so it starts excluded. Blue: you clicked it.
+        Machine count was {inv.machine_count}. Green: counted. Orange, dashed: it was unsure, so it starts excluded. Blue: a carton you added. Use Redraw if its box is wrong.
       </p>
-      {inv.capped && <p className="warn">It outlined its maximum of 16 cartons, so more may exist. Click any it missed.</p>}
-      <div className={`frame${placing ? ' placing' : ''}`} onClick={onImageClick}>
+      {inv.capped && <p className="warn">It outlined its maximum of 16 cartons, so more may exist. Draw or click any it missed.</p>}
+      <div
+        className={`frame${mode ? ' placing' : ''}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => setDrag(null)}
+      >
         <img ref={img} src={`${API}/investigations/${inv.id}/frame`} alt="The clip's frame with the proposed cartons outlined" />
         <svg viewBox={`0 0 ${inv.frame_w} ${inv.frame_h}`} preserveAspectRatio="none" aria-hidden="true">
           {inv.objects.map((o) => (
-            <g key={o.id} className={`obj ${o.source} ${o.included ? 'in' : 'out'}${o.included && o.conf < 0.8 ? ' weak' : ''}`}>
+            <g key={o.id} className={`obj ${o.source} ${o.included ? 'in' : 'out'}${o.included && o.conf < 0.8 ? ' weak' : ''}${mode?.kind === 'redraw' && mode.id === o.id ? ' target' : ''}`}>
               <rect x={o.box[0]} y={o.box[1]} width={o.box[2] - o.box[0]} height={o.box[3] - o.box[1]} />
               <text x={o.box[0] + 6} y={o.box[1] + 22}>{o.id}</text>
             </g>
           ))}
+          {drag && (
+            <rect
+              className="draft"
+              x={Math.min(drag.x0, drag.x1)}
+              y={Math.min(drag.y0, drag.y1)}
+              width={Math.abs(drag.x1 - drag.x0)}
+              height={Math.abs(drag.y1 - drag.y0)}
+            />
+          )}
         </svg>
       </div>
       {open && (
         <p>
-          <button disabled={busy} onClick={() => setPlacing(!placing)}>
-            {placing ? 'Click the carton on the picture… (cancel)' : 'Add a carton it missed'}
-          </button>
+          {mode ? (
+            <>
+              {instruction}{' '}
+              <button onClick={() => { setMode(null); setDrag(null) }}>Cancel</button>
+            </>
+          ) : (
+            <>
+              <button disabled={busy} onClick={() => { setError(''); setMode({ kind: 'draw' }) }}>Draw a carton it missed</button>{' '}
+              <button disabled={busy} onClick={() => { setError(''); setMode({ kind: 'click' }) }}>Click a carton it missed</button>
+            </>
+          )}
         </p>
       )}
+      {error && <p className="warn">{error}</p>}
       <table>
         <thead>
           <tr>
@@ -115,12 +178,13 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
             <th>Count it</th>
             <th>Item</th>
             <th className="num">Confidence</th>
+            <th>Box</th>
           </tr>
         </thead>
         <tbody>
           {inv.objects.map((o) => (
             <tr key={o.id}>
-              <td>{o.id}{o.source === 'click' ? ' (clicked)' : ''}</td>
+              <td>{o.id}{o.source === 'click' ? ' (clicked)' : o.source === 'drawn' ? ' (drawn)' : o.adjusted ? ' (redrawn)' : ''}</td>
               <td>
                 <input
                   type="checkbox"
@@ -144,6 +208,11 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
                 </select>
               </td>
               <td className="num">{o.conf.toFixed(2)}</td>
+              <td>
+                <button disabled={!open || busy || !!mode} onClick={() => { setError(''); setMode({ kind: 'redraw', id: o.id }) }}>
+                  Redraw
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -179,7 +248,6 @@ export default function Investigate({ clip, plan, name, onResolved }: { clip: Cl
             Note (kept with the decision)
             <input value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
-          {error && <p className="warn">{error}</p>}
           <p>
             <button disabled={busy} onClick={() => void run(() => resolveInvestigation(inv.id, 'confirmed', note), onResolved)}>
               Confirm this count

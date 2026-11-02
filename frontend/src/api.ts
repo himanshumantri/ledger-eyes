@@ -90,9 +90,10 @@ export async function sha256Hex(file: Blob): Promise<string> {
 
 export type InvObject = {
   id: number
-  source: 'auto' | 'click'
+  source: 'auto' | 'click' | 'drawn'
   box: [number, number, number, number]
   conf: number
+  adjusted?: boolean
   included: boolean
   item: string | null
   click: [number, number] | null
@@ -125,7 +126,9 @@ export const getInvestigations = (clipId: string) => request<Investigation[]>(`/
 export const startInvestigation = (clipId: string, reviewer: string, location?: string) =>
   request<Investigation>(`/clips/${clipId}/investigations`, json('POST', { reviewer, location }))
 export const addClick = (id: string, x: number, y: number) => request<Investigation>(`/investigations/${id}/clicks`, json('POST', { x, y }))
-export const patchObject = (id: string, objId: number, body: { included?: boolean; item?: string }) =>
+export const drawBox = (id: string, box: [number, number, number, number], objectId?: number) =>
+  request<Investigation>(`/investigations/${id}/boxes`, json('POST', { box, object_id: objectId }))
+export const patchObject =(id: string, objId: number, body: { included?: boolean; item?: string }) =>
   request<Investigation>(`/investigations/${id}/objects/${objId}`, json('PATCH', body))
 export const resolveInvestigation = (id: string, outcome: 'confirmed' | 'unresolved', note: string) =>
   request<Investigation>(`/investigations/${id}/resolve`, json('POST', { outcome, note }))

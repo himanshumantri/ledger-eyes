@@ -17,6 +17,10 @@ def point_prompt(x: int, y: int, w: int, h: int) -> str:
     return f"<0f>1<|point;x={x};y={y};w={w};h={h}|>"
 
 
+def box_prompt(x1: int, y1: int, x2: int, y2: int, w: int, h: int) -> str:
+    return f"<0f>1<|box;x1={x1};y1={y1};x2={x2};y2={y2};w={w};h={h}|>"
+
+
 def segment_still(image: Path, prompt: str) -> str:
     """Raw SAM output for one image and prompt (parse with app.segmentation.parse_sam_output, frame 0). Cached."""
     data = image.read_bytes()
