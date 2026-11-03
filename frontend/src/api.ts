@@ -21,7 +21,9 @@ export type Clip = {
   needs_review: boolean
   reasons: string[]
   has_evidence: boolean
-  preview: 'ready' | 'pending' | 'none' // the playable copy of the video
+  preview: 'ready' | 'pending' | 'failed' | 'none' // the playable copy of the video
+  preview_progress: number | null // percent done while it is being made
+  preview_error: string | null
   transcript: string
   review: { reviewer: string; reviewer_id: string | null; created_at: string; lines: { item: string; qty: number; note: string }[] } | null
 }

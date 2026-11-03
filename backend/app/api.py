@@ -53,11 +53,11 @@ def preview_state(c: Clip) -> str:
     if c.preview:
         return "ready"
     if c.preview == "":
-        return "none"
+        return "failed" if c.preview_error else "none"
     if c.status in ("queued", "running"):
         return "pending"
     finished = c.finished_at.replace(tzinfo=UTC) if c.finished_at and c.finished_at.tzinfo is None else c.finished_at
-    return "pending" if c.status == "done" and finished and datetime.now(UTC) - finished < timedelta(minutes=30) else "none"
+    return "pending" if c.status == "done" and finished and datetime.now(UTC) - finished < timedelta(minutes=60) else "none"
 
 
 def clip_json(s: Session, c: Clip) -> dict:
@@ -67,7 +67,7 @@ def clip_json(s: Session, c: Clip) -> dict:
         "uploaded_at": _iso(c.uploaded_at), "finished_at": _iso(c.finished_at), "status": c.status, "error": c.error,
         "location": c.review_location or c.location, "narrated_location": c.location, "item": c.item,
         "machine_count": c.counted, "needs_review": c.needs_review, "reasons": c.reasons,
-        "has_evidence": bool(c.evidence), "preview": preview_state(c), "transcript": c.transcript,
+        "has_evidence": bool(c.evidence), "preview": preview_state(c), "preview_progress": c.preview_progress, "preview_error": c.preview_error, "transcript": c.transcript,
         "review": {
             "reviewer": review[0].reviewer, "reviewer_id": review[0].reviewer_id, "created_at": _iso(review[0].created_at),
             "lines": [{"item": r.item, "qty": r.qty, "note": r.note} for r in review],

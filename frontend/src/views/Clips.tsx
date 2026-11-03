@@ -4,6 +4,7 @@ import { plain } from '../plain'
 import type { Role, Who } from '../roles'
 import { bringIntoView } from '../scroll'
 import Investigate from './Investigate'
+import PreviewProgress from './PreviewProgress'
 import ReviewForm from './ReviewForm'
 
 function statusLabel(c: Clip): { text: string; tone: string } {
@@ -92,6 +93,7 @@ export default function ClipsView({ clips, plan, role, who, reload }: { clips: C
                   )}
                   {c.status === 'done' && role === 'Reviewer' && (
                     <>
+                      {tool !== c.id && <PreviewProgress clip={c} />}
                       <div className="review-row">
                         <ReviewForm key={`${c.id}-${who.name}-${who.employeeId}-${c.review?.created_at ?? 'new'}`} clip={c} plan={plan} who={who} onSaved={reload} />
                         <button className="cta" aria-expanded={tool === c.id} onClick={() => setTool(tool === c.id ? null : c.id)}>
