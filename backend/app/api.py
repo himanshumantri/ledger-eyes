@@ -160,13 +160,13 @@ def create_router(sessions: sessionmaker[Session], uploads: Path, runner: Runner
         length, frames = duration_seconds(path), frame_count(path)
         if length is not None and length > MAX_VIDEO_SECONDS:
             path.unlink(missing_ok=True)
-            raise HTTPException(422, f"Videos can be at most {MAX_VIDEO_SECONDS // 60} minutes; this one is {length / 60:.1f}. Film one aisle at a time, at 720p.")
+            raise HTTPException(422, f"Videos can be at most {MAX_VIDEO_SECONDS // 60}:{MAX_VIDEO_SECONDS % 60:02d} minutes; this one is {length // 60:.0f}:{length % 60:02.0f}. Film one aisle at a time, at 720p.")
         if frames is not None and frames > MAX_VIDEO_FRAMES:
             path.unlink(missing_ok=True)
             raise HTTPException(
                 422,
                 f"This video has {frames:,} frames and the counting model takes at most {MAX_VIDEO_FRAMES:,}. "
-                f"At 30 frames per second that is {MAX_VIDEO_FRAMES / 30 / 60:.1f} minutes; a phone filming at 60 frames per second reaches it in half the time. "
+                f"At 30 frames per second that is about {MAX_VIDEO_FRAMES / 30 / 60:.1f} minutes; a phone filming at 60 frames per second reaches it in half the time. "
                 "Set the camera to 30 fps and 720p, or film a shorter stretch.",
             )
         clip = Clip(id=clip_id, filename=name, original_name=file.filename or name, sha256=digest.hexdigest(), size_bytes=size, duration_seconds=length, captured_by=(captured_by or "").strip() or None, captured_by_id=(captured_by_id or "").strip()[:100] or None)

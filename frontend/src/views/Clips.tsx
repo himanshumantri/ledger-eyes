@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { API, type Clip, type Plan } from '../api'
 import { plain } from '../plain'
 import type { Role, Who } from '../roles'
+import { bringIntoView } from '../scroll'
 import Investigate from './Investigate'
 import ReviewForm from './ReviewForm'
 
@@ -15,6 +16,10 @@ function statusLabel(c: Clip): { text: string; tone: string } {
 export default function ClipsView({ clips, plan, role, who, reload }: { clips: Clip[]; plan: Plan; role: Role; who: Who; reload: () => void }) {
   const [open, setOpen] = useState<string | null>(null)
   const [tool, setTool] = useState<string | null>(null) // the clip whose Correct real footage panel is open
+  const toolRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (tool) bringIntoView(toolRef.current) // scroll down to the panel the button just opened
+  }, [tool])
   const queue = clips.filter((c) => c.status === 'done' && c.needs_review && !c.review).length
 
   return (
@@ -94,7 +99,11 @@ export default function ClipsView({ clips, plan, role, who, reload }: { clips: C
                           <span>Outline, redraw or delete the cartons on the picture, then confirm the count</span>
                         </button>
                       </div>
-                      {tool === c.id && <Investigate key={`${c.id}-${who.name}-${who.employeeId}`} clip={c} plan={plan} who={who} onResolved={reload} />}
+                      {tool === c.id && (
+                        <div className="tool" ref={toolRef}>
+                          <Investigate key={`${c.id}-${who.name}-${who.employeeId}`} clip={c} plan={plan} who={who} onResolved={reload} />
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

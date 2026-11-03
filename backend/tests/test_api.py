@@ -137,11 +137,11 @@ def test_unknown_clip_is_404(client):
 
 def test_a_video_over_the_length_cap_is_refused_and_not_kept(client, tmp_path, monkeypatch):
     put_plan(client)
-    monkeypatch.setattr("app.api.duration_seconds", lambda path: 481.0)
+    monkeypatch.setattr("app.api.duration_seconds", lambda path: 501.0)
     res = upload(client)
-    assert res.status_code == 422 and "at most 8 minutes" in res.json()["detail"]
+    assert res.status_code == 422 and "at most 8:20 minutes" in res.json()["detail"]
     assert list((tmp_path / "uploads").glob("*")) == []
-    monkeypatch.setattr("app.api.duration_seconds", lambda path: 480.0)
+    monkeypatch.setattr("app.api.duration_seconds", lambda path: 500.0)
     assert upload(client).status_code == 201
     monkeypatch.setattr("app.api.duration_seconds", lambda path: None)  # unreadable length: the pipeline decides
     assert upload(client).status_code == 201
@@ -187,9 +187,9 @@ def test_a_video_with_too_many_frames_for_the_counting_model_is_refused(client, 
     monkeypatch.setattr("app.api.duration_seconds", lambda path: 300.0)  # a 5-minute video, but filmed at 60 frames per second
     monkeypatch.setattr("app.api.frame_count", lambda path: 18000)
     res = upload(client)
-    assert res.status_code == 422 and "18,000 frames" in res.json()["detail"] and "at most 14,000" in res.json()["detail"]
+    assert res.status_code == 422 and "18,000 frames" in res.json()["detail"] and "at most 14,900" in res.json()["detail"]
     assert list((tmp_path / "uploads").glob("*")) == []
-    monkeypatch.setattr("app.api.frame_count", lambda path: 14000)
+    monkeypatch.setattr("app.api.frame_count", lambda path: 14900)
     created = upload(client)
     assert created.status_code == 201 and created.json()["duration_seconds"] == 300.0
 

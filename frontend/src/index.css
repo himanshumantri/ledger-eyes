@@ -539,3 +539,15 @@ button.danger {
   border-radius: 6px;
   background: #000;
 }
+
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tool {
+  scroll-margin-top: 12px;
+}
