@@ -33,7 +33,7 @@ export default function ReviewForm({ clip, plan, who, onSaved }: { clip: Clip; p
 
   return (
     <form
-      className="review"
+      className="review count-card"
       onSubmit={(e) => {
         e.preventDefault()
         void save()
