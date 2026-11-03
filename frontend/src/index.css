@@ -103,6 +103,7 @@ button:disabled {
 
 nav button.active {
   border-color: var(--green);
+  background: var(--green);
   color: var(--ink);
   font-weight: 600;
 }
@@ -586,4 +587,27 @@ button.danger {
 
 .prep p {
   margin: 0 0 6px;
+}
+
+.narration p {
+  margin-bottom: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+
+button.link {
+  margin: 2px 0 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline var(--green) 2px;
+  text-underline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .narration p {
+    transition: none;
+  }
 }

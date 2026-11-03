@@ -4,6 +4,7 @@ import { plain } from '../plain'
 import type { Role, Who } from '../roles'
 import { bringIntoView } from '../scroll'
 import Investigate from './Investigate'
+import Narration from './Narration'
 import PreviewProgress from './PreviewProgress'
 import ReviewForm from './ReviewForm'
 
@@ -64,7 +65,7 @@ export default function ClipsView({ clips, plan, role, who, reload }: { clips: C
                       {c.machine_count ? ` (it confirmed ${c.machine_count} on its own)` : ''}.
                     </p>
                   )}
-                  {c.transcript && <p className="hint">Narration: “{c.transcript}”</p>}
+                  {c.transcript && <Narration text={c.transcript} />}
                   <p className="hint">
                     Fingerprint <code>{c.sha256.slice(0, 16)}…</code> · received {new Date(c.uploaded_at).toLocaleString()}
                   </p>
