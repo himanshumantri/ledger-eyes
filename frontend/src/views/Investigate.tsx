@@ -4,6 +4,7 @@ import {
   type Clip, type Corner, type InvObject, type Investigation, type Plan,
 } from '../api'
 import { whoProblem, type Who } from '../roles'
+import { bringIntoView } from '../scroll'
 
 type Mode = { kind: 'add' } | { kind: 'redraw'; id: number }
 const MIN_SIDE = 12 // image pixels; corners closer than this are a slip, not a carton
@@ -21,6 +22,13 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
   const img = useRef<HTMLImageElement>(null)
   const video = useRef<HTMLVideoElement>(null)
   const [at, setAt] = useState(0) // seconds into the video where it is paused
+  const top = useRef<HTMLDivElement>(null)
+  const [cancelled, setCancelled] = useState(false)
+
+  // When the working view opens (the frame and its boxes are taller than the start screen), bring it to the top of the screen.
+  useEffect(() => {
+    if (inv?.id) bringIntoView(top.current)
+  }, [inv?.id])
 
   useEffect(() => {
     let live = true
@@ -69,6 +77,26 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
     })
   }
 
+  /** Drop this attempt and go back to choosing a frame. Nothing is counted; the log keeps that it was cancelled. */
+  async function cancel() {
+    if (!inv) return
+    if (inv.events.length > 1 && !window.confirm('Cancel and go back? What you changed in this session will not be counted. The clip keeps the count it had before.')) return
+    setBusy(true)
+    setError('')
+    try {
+      await resolveInvestigation(inv.id, 'unresolved', 'Cancelled by the reviewer')
+      setInv(null)
+      setMode(null)
+      setCorners([])
+      setNote('')
+      setCancelled(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function begin(next: Mode) {
     setError('')
     setCorners([])
@@ -86,6 +114,7 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
     return (
       <div className="review">
         <h4>Correct real footage</h4>
+        {cancelled && <p className="hint">Cancelled. Nothing was changed: the clip keeps the count it had before. Pick a frame to start again.</p>}
         {clip.preview === 'ready' ? (
           <>
             <p className="hint">
@@ -190,8 +219,15 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
       : null
 
   return (
-    <div className="investigate">
-      <h4>Correcting {inv.location ?? 'an unknown location'}</h4>
+    <div className="investigate" ref={top}>
+      <div className="panel-head">
+        <h4>Correcting {inv.location ?? 'an unknown location'}</h4>
+        {open && (
+          <button disabled={busy} onClick={() => void cancel()}>
+            Cancel
+          </button>
+        )}
+      </div>
       <p className="hint">
         It confirmed {inv.machine_count} on its own. Green: counted. Orange, dashed: it was unsure, so it starts excluded. Blue: a carton you added.
         Use Redraw if a box is wrong and Delete if it is not a carton at all.
@@ -218,7 +254,7 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
             <>
               {instruction}{' '}
               {corners.length > 0 && <button onClick={() => { setCorners([]); setHover(null) }}>Undo corner</button>}{' '}
-              <button onClick={stop}>Cancel</button>
+              <button onClick={stop}>Cancel marking</button>
             </>
           ) : (
             <>
@@ -321,6 +357,9 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
             </button>{' '}
             <button disabled={busy} onClick={() => void run(() => resolveInvestigation(inv.id, 'unresolved', note), onResolved)}>
               Leave unresolved
+            </button>{' '}
+            <button disabled={busy} onClick={() => void cancel()}>
+              Cancel
             </button>
           </p>
         </div>

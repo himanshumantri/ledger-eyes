@@ -73,7 +73,7 @@ export default function CaptureView({
           Say the location first, for example <em>"Aisle A1, shelf B2"</em>, then the item names.
         </li>
         <li>Keep every carton in view and do not cover labels.</li>
-        <li>A video can be up to 8 minutes, filmed at 30 frames per second (a phone set to 60 fps reaches the limit in 4 minutes). Film at 720p so a long video stays small enough to upload. Counting takes about one and a half times the length of the video.</li>
+        <li>A video can be up to 8 minutes 20 seconds, filmed at 30 frames per second (a phone set to 60 fps reaches the limit in 4 minutes). Film at 720p so a long video stays small enough to upload. Counting takes about one and a half times the length of the video.</li>
       </ol>
       <input
         type="file"

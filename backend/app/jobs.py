@@ -3,7 +3,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import OUT
@@ -55,3 +55,17 @@ def build_preview(sessions: sessionmaker[Session], clip_id: str, uploads: Path, 
             made = False
         clip.preview = relative if made else ""
         s.commit()
+
+
+def fail_interrupted(sessions: sessionmaker[Session]) -> int:
+    """At start-up, any clip still queued or running was cut off by a restart (counting runs inside the server), so it
+    can never finish. Mark it failed so the screen stops saying "Counting..." for ever. Returns how many were marked."""
+    with sessions() as s:
+        done = s.execute(
+            update(Clip).where(Clip.status.in_(("queued", "running"))).values(
+                status="failed", finished_at=datetime.now(UTC),
+                error="The server restarted while this video was being counted. Upload it again.",
+            )
+        )
+        s.commit()
+        return done.rowcount

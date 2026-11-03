@@ -8,7 +8,7 @@ from app.api import create_router
 from app.config import DATABASE_URL, OUT, UPLOADS
 from app.db import make_session_factory
 from app.investigate import Segmenter, create_investigation_router
-from app.jobs import Runner
+from app.jobs import Runner, fail_interrupted
 
 
 def _default_runner() -> Runner:
@@ -38,6 +38,7 @@ def create_app(
         return {"status": "ok"}
 
     sessions = make_session_factory(database_url)
+    fail_interrupted(sessions)
     app.include_router(create_router(sessions, uploads, runner or _default_runner(), out))
     app.include_router(create_investigation_router(sessions, uploads, out, segmenter or _default_segmenter()))
     return app

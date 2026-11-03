@@ -60,3 +60,16 @@ def test_the_same_employee_id_is_the_same_person_even_under_another_name(tmp_pat
     done = client.post(f"/clips/{clip['id']}/review", json=body).json()
     assert done["review"]["reviewer"] == "Meera" and done["review"]["reviewer_id"] == "E-42"
     assert any("Meera (E-42)" in r["reviewer"] for r in client.get("/reconciliation").json() if r["count_source"] == "reviewed")
+
+
+def test_a_clip_cut_off_by_a_restart_is_marked_failed_not_left_counting(tmp_path):
+    url = f"sqlite:///{(tmp_path / 'db.sqlite').as_posix()}"
+    sessions = make_session_factory(url)
+    with sessions() as s:
+        for name, status in (("a", "running"), ("b", "queued"), ("c", "done")):
+            s.add(Clip(id=name, filename=f"{name}.mp4", original_name=f"{name}.mp4", sha256="0", size_bytes=1, status=status))
+        s.commit()
+    client = TestClient(create_app(url, tmp_path / "uploads", lambda video, book: None, tmp_path / "out", lambda image, prompt: ""))
+    by_id = {c["id"]: c for c in client.get("/clips").json()}
+    assert [by_id[k]["status"] for k in "abc"] == ["failed", "failed", "done"]
+    assert "restarted" in by_id["a"]["error"]
