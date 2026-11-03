@@ -1,29 +1,27 @@
 :root {
-  --bg: #fafaf9;
-  --surface: #ffffff;
-  --text: #1c1917;
-  --muted: #6b655e;
-  --line: #e4e0da;
-  --accent: #1f5f8b;
-  --ok: #2f7d4a;
-  --warn: #b45f06;
-  --bad: #b3261e;
-  color-scheme: light dark;
-  font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
+  /* The five brand colours; everything else is a tint or shade of these. */
+  --green: #00c875;
+  --slate: #64748b;
+  --paper: #f5f7f9;
+  --red: #e2445c;
+  --ink: #1e293b;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #161412;
-    --surface: #1f1c19;
-    --text: #efebe5;
-    --muted: #a39b91;
-    --line: #35302b;
-    --accent: #7ab6dd;
-    --ok: #64c184;
-    --warn: #e8a24f;
-    --bad: #f08a82;
-  }
+  --bg: var(--paper);
+  --surface: #ffffff;
+  --text: var(--ink);
+  --muted: var(--slate);
+  --line: color-mix(in srgb, var(--slate) 25%, #fff);
+  --accent: var(--green); /* fills, bars and outlines; green is too light to be used as text on white */
+  --ok: var(--green);
+  --warn: var(--red);
+  --bad: var(--red);
+  --red-text: color-mix(in srgb, var(--red) 75%, var(--ink)); /* the red, darkened until it reads as text */
+  --green-tint: color-mix(in srgb, var(--green) 16%, #fff);
+  --red-tint: color-mix(in srgb, var(--red) 12%, #fff);
+  --font: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Roboto Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+  color-scheme: light;
+  font: 16px/1.5 var(--font);
 }
 
 * {
@@ -42,13 +40,16 @@ header {
   align-items: center;
   gap: 8px 24px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--ink);
+  color: var(--paper);
 }
 
 h1 {
   margin: 0;
-  font-size: 1.25rem;
+  color: var(--green);
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 h2 {
@@ -91,7 +92,7 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 a:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--green);
   outline-offset: 2px;
 }
 
@@ -101,8 +102,8 @@ button:disabled {
 }
 
 nav button.active {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--green);
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -115,10 +116,14 @@ select {
 }
 
 a {
-  color: var(--accent);
+  color: var(--ink);
+  text-decoration-color: var(--green);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
 }
 
 code {
+  font-family: var(--mono);
   font-size: 0.9em;
 }
 
@@ -126,8 +131,9 @@ code {
   margin-left: 6px;
   padding: 0 7px;
   border-radius: 10px;
-  background: var(--warn);
+  background: var(--red);
   color: #fff;
+  font-family: var(--mono);
   font-size: 0.8rem;
 }
 
@@ -137,7 +143,7 @@ code {
 }
 
 .warn {
-  color: var(--bad);
+  color: var(--red-text);
 }
 
 .steps {
@@ -160,6 +166,7 @@ td {
 
 .num {
   text-align: right;
+  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -169,7 +176,7 @@ td {
 
 .status-variance td:nth-child(5),
 .status-variance td:nth-child(6) {
-  color: var(--warn);
+  color: var(--red-text);
   font-weight: 600;
 }
 
@@ -179,7 +186,7 @@ td {
 }
 
 .flag {
-  color: var(--warn);
+  color: var(--red-text);
   font-size: 0.85rem;
 }
 
@@ -218,19 +225,21 @@ td {
   padding: 1px 8px;
   border: 1px solid currentColor;
   border-radius: 10px;
-  font-size: 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
 }
 
 .tag.ok {
-  color: var(--ok);
+  border-color: var(--green);
+  background: var(--green-tint);
+  color: var(--ink);
 }
 
-.tag.warn {
-  color: var(--warn);
-}
-
+.tag.warn,
 .tag.bad {
-  color: var(--bad);
+  border-color: var(--red);
+  background: var(--red-tint);
+  color: var(--red-text);
 }
 
 .tag.wait {
@@ -350,7 +359,7 @@ figcaption {
 
 .obj.out rect,
 .obj.weak rect {
-  stroke: var(--warn);
+  stroke: var(--red);
   stroke-dasharray: 6 4;
 }
 
@@ -360,8 +369,9 @@ figcaption {
 
 .obj.click rect,
 .obj.drawn rect {
-  stroke: var(--accent);
+  stroke: var(--ink);
   stroke-dasharray: none;
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff); /* a dark box needs a light edge to show on a dark photo */
 }
 
 .obj.target rect {
@@ -371,7 +381,8 @@ figcaption {
 
 rect.draft {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--ink);
+  filter: drop-shadow(0 0 1px #fff);
   stroke-width: 2;
   stroke-dasharray: 4 3;
   vector-effect: non-scaling-stroke;
@@ -385,14 +396,25 @@ rect.draft {
 }
 
 .roles > span {
-  color: var(--muted);
+  color: color-mix(in srgb, var(--paper) 70%, var(--ink));
+}
+
+header button {
+  border-color: var(--slate);
+  background: transparent;
+  color: var(--paper);
 }
 
 .roles button.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--bg);
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--ink);
   font-weight: 600;
+}
+
+.who input {
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .who {
@@ -428,10 +450,10 @@ input[aria-invalid='true'] {
   flex: 0 1 320px;
   margin-top: 12px;
   padding: 18px 22px;
-  border: 2px solid var(--accent);
+  border: 2px solid var(--green);
   border-radius: 10px;
-  background: var(--accent);
-  color: var(--bg);
+  background: var(--green);
+  color: var(--ink);
   text-align: left;
   cursor: pointer;
 }
@@ -447,7 +469,7 @@ input[aria-invalid='true'] {
 
 .cta[aria-expanded='true'] {
   background: transparent;
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .overlay {
@@ -509,7 +531,7 @@ input[aria-invalid='true'] {
 }
 
 .vertex {
-  fill: var(--accent);
+  fill: var(--ink);
   stroke: #fff;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
@@ -520,15 +542,15 @@ td.actions {
 }
 
 button.primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--bg);
+  border-color: var(--green);
+  background: var(--green);
+  color: var(--ink);
   font-weight: 600;
 }
 
 button.danger {
-  border-color: var(--bad);
-  color: var(--bad);
+  border-color: var(--red);
+  color: var(--red-text);
 }
 
 .clipvideo {
