@@ -233,7 +233,7 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
         )}
       </div>
       <p className="hint">
-        It confirmed {inv.machine_count} on its own. Green: counted. Orange, dashed: it was unsure, so it starts excluded. Blue: a carton you added.
+        It confirmed {inv.machine_count} on its own. Green: counted. Red, dashed: it was unsure, so it starts excluded. Dark outline: a carton you added.
         Use Redraw if a box is wrong and Delete if it is not a carton at all.
       </p>
       {inv.capped && <p className="warn">It outlined its maximum of 16 cartons, so more may exist. Add any it missed.</p>}
