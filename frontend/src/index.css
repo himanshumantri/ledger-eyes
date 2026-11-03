@@ -619,11 +619,42 @@ button.link {
 }
 
 input.qty {
-  border-color: var(--amber);
+  width: 100%;
+  min-width: 0;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
   background: var(--amber);
   color: var(--ink);
   font-family: var(--mono);
   font-weight: 500;
+}
+
+/* The count form sits on its own slate card so it reads as a separate section */
+.count-card {
+  padding: 16px;
+  border-top: 0;
+  border-radius: 10px;
+  background: var(--slate);
+  color: #fff;
+}
+
+.count-card .hint {
+  color: #fff;
+  opacity: 0.9;
+}
+
+.count-card .warn {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--red-tint);
+}
+
+.count-card .qty-grid {
+  gap: 12px 16px;
+}
+
+.count-card select {
+  border: 2px solid var(--ink);
 }
 
 input.qty:focus-visible {
