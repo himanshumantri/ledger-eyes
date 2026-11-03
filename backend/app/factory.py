@@ -38,7 +38,7 @@ def create_app(
         return {"status": "ok"}
 
     sessions = make_session_factory(database_url)
-    fail_interrupted(sessions)
+    fail_interrupted(sessions, out)
     app.include_router(create_router(sessions, uploads, runner or _default_runner(), out))
     app.include_router(create_investigation_router(sessions, uploads, out, segmenter or _default_segmenter()))
     return app

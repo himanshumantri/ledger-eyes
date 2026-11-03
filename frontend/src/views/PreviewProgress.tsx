@@ -15,7 +15,8 @@ export default function PreviewProgress({ clip }: { clip: Clip }) {
   const percent = clip.preview_progress
   const started = clip.finished_at ? new Date(clip.finished_at).getTime() : null
   // The copy is started the moment counting finishes, so time since then and the percentage done give a rough time left.
-  const left = percent && percent >= 5 && started ? ` About ${clock(((Date.now() - started) / 1000) * ((100 - percent) / percent))} left.` : ''
+  const left = percent !== null && percent >= 99 ? ' Saving the finished video, nearly there.'
+    : percent && percent >= 5 && started ? ` About ${clock(Math.max(0, ((Date.now() - started) / 1000) * ((100 - percent) / percent)))} left.` : ''
   return (
     <div className="prep" role="status">
       <p>

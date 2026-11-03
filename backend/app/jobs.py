@@ -12,10 +12,11 @@ from app.config import OUT
 from app.files import save_blob
 from app.media import make_preview
 from app.reconcile import BookLine, ClipResult
-from app.tables import BookLineRow, Clip
+from app.tables import BookLineRow, Blob, Clip
 
 Runner = Callable[[Path, list[BookLine]], ClipResult]
 LOG = logging.getLogger("uvicorn.error")  # shows up in the host's log next to the server's own lines
+BLOB_LIMIT_BYTES = 25 * 1024 * 1024  # previews above this stay on the disk only
 
 
 def book_lines(session: Session) -> list[BookLine]:
@@ -68,7 +69,17 @@ def build_preview(
         s.commit()
         try:
             make(uploads / clip.filename, out / relative, progress, clip.duration_seconds)
-            made = save_blob(s, out, relative)
+            path = out / relative
+            size = path.stat().st_size if path.is_file() else 0
+            LOG.info("preview for %s: video written, %.1f MB in %.0f s", clip_id, size / 1e6, time.monotonic() - started)
+            clip.preview_progress = 99
+            s.commit()
+            # A big copy is served from the disk only: pushing tens of MB through the free database is slow and can
+            # exhaust the host's memory. The cost is that it is gone after a restart (the video itself is too).
+            if 0 < size <= BLOB_LIMIT_BYTES:
+                made = save_blob(s, out, relative)
+            else:
+                made = size > 0
             error = None if made else "The preview file was not written"
         except Exception as e:  # ffmpeg missing, the video unreadable, or the database refusing the file
             made, error = False, f"{type(e).__name__}: {e}"[:500]
@@ -78,7 +89,7 @@ def build_preview(
         LOG.info("preview for %s: %s in %.0f s", clip_id, "ready" if made else f"failed ({error})", time.monotonic() - started)
 
 
-def fail_interrupted(sessions: sessionmaker[Session]) -> int:
+def fail_interrupted(sessions: sessionmaker[Session], out: Path = OUT) -> int:
     """At start-up, any clip still queued or running was cut off by a restart (counting runs inside the server), so it
     can never finish. Mark it failed so the screen stops saying "Counting..." for ever. Returns how many were marked."""
     with sessions() as s:
@@ -94,5 +105,10 @@ def fail_interrupted(sessions: sessionmaker[Session]) -> int:
                 preview="", preview_progress=None, preview_error="The server restarted while the video was being prepared.",
             )
         )
+        # A large preview lives on the disk only; once a restart has wiped it, say so rather than offering a video that will not play.
+        for clip in s.scalars(select(Clip).where(Clip.preview != "", Clip.preview.is_not(None))):
+            if not (out / clip.preview).is_file() and s.get(Blob, clip.preview) is None:
+                clip.preview, clip.preview_progress = "", None
+                clip.preview_error = "The server restarted and the prepared video was cleared. Upload the video again to pause on a moment."
         s.commit()
         return done.rowcount

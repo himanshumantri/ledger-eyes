@@ -3,6 +3,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -43,6 +44,7 @@ def frame_count(video: Path) -> int | None:
 
 _PROGRESS_KEYS = {"frame", "fps", "bitrate", "total_size", "out_time_us", "out_time_ms", "out_time", "dup_frames", "drop_frames", "speed", "progress"}
 COPY_LIMIT_BYTES = 80 * 1024 * 1024  # a video this small that a browser can already play is used as it is
+PREVIEW_TIMEOUT_SECONDS = 20 * 60  # ffmpeg is stopped after this long
 
 
 def playable_as_is(video: Path) -> bool:
@@ -79,14 +81,29 @@ def make_preview(video: Path, out: Path, on_progress: Callable[[int], None] | No
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     complaints: list[str] = []
     assert proc.stdout is not None
-    for line in proc.stdout:
-        key, _, value = line.strip().partition("=")
-        if key in ("out_time_us", "out_time_ms"):  # both are microseconds, whatever the second one is called
-            if on_progress and duration and value.isdigit():
-                on_progress(min(99, int(int(value) / 1e6 / duration * 100)))
-        elif key not in _PROGRESS_KEYS and not key.startswith("stream_"):
-            complaints.append(line.strip())
-    if proc.wait() != 0:
+    # Never leave a reviewer watching a bar for ever: past this long, stop ffmpeg and say so.
+    timed_out = threading.Event()
+
+    def stop() -> None:
+        timed_out.set()
+        proc.kill()
+
+    watchdog = threading.Timer(PREVIEW_TIMEOUT_SECONDS, stop)
+    watchdog.start()
+    try:
+        for line in proc.stdout:
+            key, _, value = line.strip().partition("=")
+            if key in ("out_time_us", "out_time_ms"):  # both are microseconds, whatever the second one is called
+                if on_progress and duration and value.isdigit():
+                    on_progress(min(99, int(int(value) / 1e6 / duration * 100)))
+            elif key not in _PROGRESS_KEYS and not key.startswith("stream_"):
+                complaints.append(line.strip())
+        code = proc.wait()
+    finally:
+        watchdog.cancel()
+    if timed_out.is_set():
+        raise RuntimeError(f"Preparing the video took more than {PREVIEW_TIMEOUT_SECONDS // 60} minutes on this server, so it was stopped")
+    if code != 0:
         raise RuntimeError(("ffmpeg could not make the preview: " + " ".join(complaints[-3:]))[:400])
 
 

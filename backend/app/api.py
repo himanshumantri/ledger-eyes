@@ -38,7 +38,8 @@ class ReviewIn(BaseModel):
 
 
 def _iso(d: datetime | None) -> str | None:
-    return d.isoformat() if d else None
+    # The database hands back naive UTC times; without the offset a browser reads them as its own local time.
+    return (d.replace(tzinfo=UTC) if d.tzinfo is None else d).isoformat() if d else None
 
 
 def latest_review(s: Session, clip_id: str) -> list[Review]:

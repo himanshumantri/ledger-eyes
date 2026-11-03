@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import jobs  # noqa: E402
 from app.db import make_session_factory  # noqa: E402
-from app.tables import Clip  # noqa: E402
+from app.tables import Blob, Clip  # noqa: E402
 
 
 def test_preview_progress_is_written_to_the_clip_at_most_every_two_seconds(tmp_path, monkeypatch):
@@ -30,6 +30,23 @@ def test_preview_progress_is_written_to_the_clip_at_most_every_two_seconds(tmp_p
     with sessions() as s:
         clip = s.get(Clip, "c")
         assert (clip.preview, clip.preview_progress, clip.preview_error) == ("previews/c.mp4", 100, None)
+
+
+def test_a_large_preview_stays_on_the_disk_and_is_not_pushed_into_the_database(tmp_path, monkeypatch):
+    sessions = make_session_factory("sqlite://")
+    with sessions() as s:
+        s.add(Clip(id="c", filename="c.mp4", original_name="c.mp4", sha256="0", size_bytes=1, status="done"))
+        s.commit()
+    monkeypatch.setattr(jobs, "BLOB_LIMIT_BYTES", 5)
+
+    def make(video, out, progress, duration):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"0123456789")
+
+    jobs.build_preview(sessions, "c", tmp_path, tmp_path, make)
+    with sessions() as s:
+        assert s.get(Clip, "c").preview == "previews/c.mp4"
+        assert s.get(Blob, "previews/c.mp4") is None
 
 
 def test_a_failed_preview_keeps_the_reason(tmp_path):
