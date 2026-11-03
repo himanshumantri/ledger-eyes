@@ -58,7 +58,7 @@ export default function ReviewForm({ clip, plan, who, onSaved }: { clip: Clip; p
         {items.map((item) => (
           <label key={item}>
             {item}
-            <input type="number" min={0} step={1} value={qty[item] ?? ''} onChange={(e) => setQty({ ...qty, [item]: e.target.value })} />
+            <input className="qty" type="number" min={0} step={1} value={qty[item] ?? ''} onChange={(e) => setQty({ ...qty, [item]: e.target.value })} />
           </label>
         ))}
       </div>
@@ -66,7 +66,7 @@ export default function ReviewForm({ clip, plan, who, onSaved }: { clip: Clip; p
         Recorded as {who.name.trim() || '(name missing)'}, ID {who.employeeId.trim() || '(missing)'}.
       </p>
       {error && <p className="warn">{error}</p>}
-      <button type="submit" disabled={saving}>
+      <button type="submit" className="primary" disabled={saving}>
         {saving ? 'Saving…' : 'Save count'}
       </button>
     </form>

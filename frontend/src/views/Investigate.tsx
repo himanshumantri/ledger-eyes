@@ -227,7 +227,7 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
       <div className="panel-head">
         <h4>Correcting {inv.location ?? 'an unknown location'}</h4>
         {open && (
-          <button disabled={busy} onClick={() => void cancel()}>
+          <button className="btn-red" disabled={busy} onClick={() => void cancel()}>
             Cancel
           </button>
         )}
@@ -262,7 +262,7 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
             </>
           ) : (
             <>
-              <button disabled={busy} onClick={() => begin({ kind: 'add' })}>Add a carton</button>
+              <button className="btn-slate" disabled={busy} onClick={() => begin({ kind: 'add' })}>Add a carton</button>
             </>
           )}
         </p>
@@ -356,13 +356,13 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
             <input value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
           <p>
-            <button disabled={busy} onClick={() => void run(() => resolveInvestigation(inv.id, 'confirmed', note), onResolved)}>
+            <button className="btn-green" disabled={busy} onClick={() => void run(() => resolveInvestigation(inv.id, 'confirmed', note), onResolved)}>
               Confirm this count
             </button>{' '}
-            <button disabled={busy} onClick={() => void run(() => resolveInvestigation(inv.id, 'unresolved', note), onResolved)}>
+            <button className="btn-amber" disabled={busy} onClick={() => void run(() => resolveInvestigation(inv.id, 'unresolved', note), onResolved)}>
               Leave unresolved
             </button>{' '}
-            <button disabled={busy} onClick={() => void cancel()}>
+            <button className="btn-red" disabled={busy} onClick={() => void cancel()}>
               Cancel
             </button>
           </p>
