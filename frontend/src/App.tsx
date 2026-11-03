@@ -5,7 +5,6 @@ import CaptureView from './views/Capture'
 import ClipsView from './views/Clips'
 import PlanView from './views/Plan'
 import ReconciliationView from './views/Reconciliation'
-import Logo from './Logo'
 
 const asRole = (v: string | null): Role => (ROLES.find((r) => r === v) ?? 'Capturer')
 
@@ -103,7 +102,6 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <Logo className="brand-mark" />
       </header>
       <main>
         <p className="hint">{BLURB[role]}</p>
