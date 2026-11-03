@@ -1,6 +1,8 @@
 """Run one uploaded clip through the pipeline and store the result. Runs in the background after the upload returns."""
+import logging
+import time
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select, update
@@ -13,6 +15,7 @@ from app.reconcile import BookLine, ClipResult
 from app.tables import BookLineRow, Clip
 
 Runner = Callable[[Path, list[BookLine]], ClipResult]
+LOG = logging.getLogger("uvicorn.error")  # shows up in the host's log next to the server's own lines
 
 
 def book_lines(session: Session) -> list[BookLine]:
@@ -41,20 +44,38 @@ def process_clip(sessions: sessionmaker[Session], clip_id: str, uploads: Path, r
         s.commit()
 
 
-def build_preview(sessions: sessionmaker[Session], clip_id: str, uploads: Path, out: Path = OUT, make: Callable[[Path, Path], None] = make_preview) -> None:
-    """Make the playable copy once counting is done, so it can never delay or fail a count. A failure just means no preview."""
+def build_preview(
+    sessions: sessionmaker[Session], clip_id: str, uploads: Path, out: Path = OUT,
+    make: Callable[[Path, Path, Callable[[int], None], float | None], None] = make_preview,
+) -> None:
+    """Make the playable copy once counting is done, so it can never delay or fail a count. Progress and any failure are
+    written to the clip so the reviewer sees what is happening instead of waiting blind."""
     with sessions() as s:
         clip = s.get(Clip, clip_id)
         if clip is None or clip.status != "done":
             return
         relative = f"previews/{Path(clip.filename).stem}.mp4"
-        try:
-            make(uploads / clip.filename, out / relative)
-            made = save_blob(s, out, relative)
-        except Exception:  # ffmpeg missing or the video unreadable
-            made = False
-        clip.preview = relative if made else ""
+        started, last = time.monotonic(), [-1, 0.0]  # last percent written, and when
+
+        def progress(percent: int) -> None:
+            now = time.monotonic()
+            if percent != last[0] and now - last[1] >= 2:  # at most one write every two seconds
+                last[0], last[1] = percent, now
+                clip.preview_progress = percent
+                s.commit()
+
+        clip.preview_progress, clip.preview_error = 0, None
         s.commit()
+        try:
+            make(uploads / clip.filename, out / relative, progress, clip.duration_seconds)
+            made = save_blob(s, out, relative)
+            error = None if made else "The preview file was not written"
+        except Exception as e:  # ffmpeg missing, the video unreadable, or the database refusing the file
+            made, error = False, f"{type(e).__name__}: {e}"[:500]
+        clip.preview, clip.preview_error = (relative if made else ""), error
+        clip.preview_progress = 100 if made else None
+        s.commit()
+        LOG.info("preview for %s: %s in %.0f s", clip_id, "ready" if made else f"failed ({error})", time.monotonic() - started)
 
 
 def fail_interrupted(sessions: sessionmaker[Session]) -> int:
@@ -65,6 +86,12 @@ def fail_interrupted(sessions: sessionmaker[Session]) -> int:
             update(Clip).where(Clip.status.in_(("queued", "running"))).values(
                 status="failed", finished_at=datetime.now(UTC),
                 error="The server restarted while this video was being counted. Upload it again.",
+            )
+        )
+        # A preview that was being made when the server stopped will never finish either.
+        s.execute(
+            update(Clip).where(Clip.status == "done", Clip.preview.is_(None), Clip.finished_at > datetime.now(UTC) - timedelta(minutes=60)).values(
+                preview="", preview_progress=None, preview_error="The server restarted while the video was being prepared.",
             )
         )
         s.commit()

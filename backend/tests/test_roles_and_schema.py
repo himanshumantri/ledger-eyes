@@ -73,3 +73,20 @@ def test_a_clip_cut_off_by_a_restart_is_marked_failed_not_left_counting(tmp_path
     by_id = {c["id"]: c for c in client.get("/clips").json()}
     assert [by_id[k]["status"] for k in "abc"] == ["failed", "failed", "done"]
     assert "restarted" in by_id["a"]["error"]
+
+
+def test_a_preview_being_made_when_the_server_stopped_is_marked_failed_at_the_next_start(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    url = f"sqlite:///{(tmp_path / 'db.sqlite').as_posix()}"
+    sessions = make_session_factory(url)
+    now = datetime.now(UTC)
+    with sessions() as s:
+        for name, finished, preview in (("recent", now, None), ("old", now - timedelta(hours=3), None), ("ready", now, "previews/x.mp4")):
+            s.add(Clip(id=name, filename=f"{name}.mp4", original_name=f"{name}.mp4", sha256="0", size_bytes=1, status="done", finished_at=finished, preview=preview))
+        s.commit()
+    client = TestClient(create_app(url, tmp_path / "uploads", lambda video, book: None, tmp_path / "out", lambda image, prompt: ""))
+    by_id = {c["id"]: c for c in client.get("/clips").json()}
+    assert by_id["recent"]["preview"] == "failed" and "restarted" in by_id["recent"]["preview_error"]
+    assert by_id["old"]["preview"] == "none"  # finished long ago: left alone, not shown as a failure
+    assert by_id["ready"]["preview"] == "ready"

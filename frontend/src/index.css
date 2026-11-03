@@ -551,3 +551,17 @@ button.danger {
 .tool {
   scroll-margin-top: 12px;
 }
+
+.bar.known span {
+  left: 0;
+  animation: none;
+  transition: width 0.6s ease;
+}
+
+.prep {
+  margin: 8px 0;
+}
+
+.prep p {
+  margin: 0 0 6px;
+}

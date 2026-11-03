@@ -50,6 +50,8 @@ class Clip(Base):
     captured_by_id: Mapped[str | None] = mapped_column(String(100), default=None)  # their employee ID
     # The playable preview copy, made after counting: None = not made yet, "" = could not be made, else its path under the data folder
     preview: Mapped[str | None] = mapped_column(String(500), default=None)
+    preview_progress: Mapped[int | None] = mapped_column(default=None)  # percent done while it is being made
+    preview_error: Mapped[str | None] = mapped_column(String(500), default=None)  # why it could not be made
 
 
 class Blob(Base):

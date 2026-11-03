@@ -150,7 +150,7 @@ def test_a_video_over_the_length_cap_is_refused_and_not_kept(client, tmp_path, m
 def test_the_playable_copy_is_made_after_counting_and_can_be_seeked(client, runner, tmp_path, monkeypatch):
     put_plan(client)
     runner.results.append(auto_pass())
-    monkeypatch.setattr("app.api.make_preview", lambda video, out: (out.parent.mkdir(parents=True, exist_ok=True), out.write_bytes(b"0123456789"))[1])
+    monkeypatch.setattr("app.api.make_preview", lambda video, out, progress, duration: (out.parent.mkdir(parents=True, exist_ok=True), out.write_bytes(b"0123456789"))[1])
     clip = upload(client).json()
     assert client.get(f"/clips/{clip['id']}").json()["preview"] == "ready"
     whole = client.get(f"/clips/{clip['id']}/preview")
@@ -173,12 +173,13 @@ def test_a_playable_copy_that_cannot_be_made_does_not_touch_the_count(client, ru
     put_plan(client)
     runner.results.append(auto_pass())
 
-    def broken(video, out):
+    def broken(video, out, progress, duration):
         raise RuntimeError("ffmpeg is not installed")
 
     monkeypatch.setattr("app.api.make_preview", broken)
     clip = client.get(f"/clips/{upload(client).json()['id']}").json()
-    assert clip["status"] == "done" and clip["machine_count"] == 4 and clip["preview"] == "none"
+    assert clip["status"] == "done" and clip["machine_count"] == 4 and clip["preview"] == "failed"
+    assert "ffmpeg is not installed" in clip["preview_error"] and clip["preview_progress"] is None
     assert client.get(f"/clips/{clip['id']}/preview").status_code == 404
 
 

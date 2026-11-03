@@ -5,6 +5,7 @@ import {
 } from '../api'
 import { whoProblem, type Who } from '../roles'
 import { bringIntoView } from '../scroll'
+import PreviewProgress from './PreviewProgress'
 
 type Mode = { kind: 'add' } | { kind: 'redraw'; id: number }
 const MIN_SIDE = 12 // image pixels; corners closer than this are a slip, not a carton
@@ -137,8 +138,11 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
           <p className="hint">
             It proposes the cartons on this clip's frame. You include or exclude each one, redraw or delete a wrong box, add any it missed, and say which
             item each is.
-            {clip.preview === 'pending' && ' The video is still being prepared, so you can start from the frame it picked now.'}
           </p>
+        )}
+        <PreviewProgress clip={clip} />
+        {clip.preview === 'pending' && (
+          <p className="hint">Wait for the video if you want to pause on a moment you choose. The button below starts now, on the one frame it picked.</p>
         )}
         {!clip.location && (
           <label>
@@ -166,7 +170,7 @@ export default function Investigate({ clip, plan, who, onResolved }: { clip: Cli
           disabled={busy || !!problem}
           onClick={() => void run(() => startInvestigation(clip.id, who.name.trim(), who.employeeId.trim(), clip.location ? undefined : location || undefined))}
         >
-          {busy ? 'Looking at the frame…' : clip.preview === 'ready' ? 'Use the frame it picked' : 'Start'}
+          {busy ? 'Looking at the frame…' : clip.preview === 'ready' || clip.preview === 'pending' ? 'Use the frame it picked' : 'Start'}
         </button>
       </div>
     )
