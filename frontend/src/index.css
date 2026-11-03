@@ -1,6 +1,7 @@
 :root {
   /* The five brand colours; everything else is a tint or shade of these. */
   --green: #00c875;
+  --amber: #fdab3d;
   --slate: #64748b;
   --paper: #f5f7f9;
   --red: #e2445c;
@@ -151,6 +152,10 @@ code {
   padding-left: 20px;
 }
 
+.steps li + li {
+  margin-top: 0.5rem;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -206,7 +211,8 @@ td {
 
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) 1fr 3rem auto;
+  /* Fixed widths so every row lines up: name takes the rest, then location, count and status */
+  grid-template-columns: minmax(0, 1fr) 7rem 3rem 9rem;
   gap: 12px;
   align-items: center;
   width: 100%;
@@ -610,4 +616,47 @@ button.link {
   .narration p {
     transition: none;
   }
+}
+
+input.qty {
+  border-color: var(--amber);
+  background: var(--amber);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+input.qty:focus-visible {
+  outline-color: var(--ink);
+}
+
+button.btn-slate,
+button.btn-green,
+button.btn-amber,
+button.btn-red {
+  font-weight: 600;
+}
+
+button.btn-slate {
+  border-color: var(--slate);
+  background: var(--slate);
+  color: #fff;
+}
+
+button.btn-green {
+  border-color: var(--green);
+  background: var(--green);
+  color: var(--ink);
+}
+
+button.btn-amber {
+  border-color: var(--amber);
+  background: var(--amber);
+  color: var(--ink);
+}
+
+button.btn-red {
+  border-color: var(--red);
+  background: var(--red);
+  color: #fff;
 }
