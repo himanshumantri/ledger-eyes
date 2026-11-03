@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.db import make_session_factory  # noqa: E402
 from app.factory import create_app  # noqa: E402
 from app.reconcile import ClipResult  # noqa: E402
-from app.tables import Clip  # noqa: E402
+from app.tables import Blob, Clip  # noqa: E402
 
 BOOK_CSV = "item,location,book_qty,unit_cost\nmonitor,A1-B2,5,100\n"
 
@@ -82,11 +82,26 @@ def test_a_preview_being_made_when_the_server_stopped_is_marked_failed_at_the_ne
     sessions = make_session_factory(url)
     now = datetime.now(UTC)
     with sessions() as s:
-        for name, finished, preview in (("recent", now, None), ("old", now - timedelta(hours=3), None), ("ready", now, "previews/x.mp4")):
+        for name, finished, preview in (("recent", now, None), ("old", now - timedelta(hours=3), None), ("ready", now, "previews/x.mp4"), ("gone", now, "previews/gone.mp4")):
             s.add(Clip(id=name, filename=f"{name}.mp4", original_name=f"{name}.mp4", sha256="0", size_bytes=1, status="done", finished_at=finished, preview=preview))
+        s.add(Blob(key="previews/x.mp4", data=b"x"))  # a small preview is also kept in the database
         s.commit()
     client = TestClient(create_app(url, tmp_path / "uploads", lambda video, book: None, tmp_path / "out", lambda image, prompt: ""))
     by_id = {c["id"]: c for c in client.get("/clips").json()}
     assert by_id["recent"]["preview"] == "failed" and "restarted" in by_id["recent"]["preview_error"]
     assert by_id["old"]["preview"] == "none"  # finished long ago: left alone, not shown as a failure
     assert by_id["ready"]["preview"] == "ready"
+    # A large preview is kept on the disk only; a restart wipes the disk, so it must stop claiming to be ready.
+    assert by_id["gone"]["preview"] == "failed" and "cleared" in by_id["gone"]["preview_error"]
+
+
+def test_times_carry_a_utc_offset_so_a_browser_does_not_read_them_as_local_time(tmp_path):
+    from datetime import datetime
+
+    url = f"sqlite:///{(tmp_path / 'db.sqlite').as_posix()}"
+    sessions = make_session_factory(url)
+    with sessions() as s:  # SQLite and Postgres both give a time back without its zone
+        s.add(Clip(id="a", filename="a.mp4", original_name="a.mp4", sha256="0", size_bytes=1, status="done", finished_at=datetime(2026, 11, 3, 9, 0)))
+        s.commit()
+    client = TestClient(create_app(url, tmp_path / "uploads", lambda video, book: None, tmp_path / "out", lambda image, prompt: ""))
+    assert client.get("/clips").json()[0]["finished_at"].endswith("+00:00")
