@@ -159,3 +159,6 @@ Status: tested with a fake pipeline (`tests/test_api.py`). Deployed as a trial o
 2. Run the service end to end with real clips through the UI, then deploy: Render (blueprint in `render.yaml`) and Vercel (set `VITE_API_URL`, and `CORS_ORIGINS` on the API).
 3. Capture screen: orientation, lighting and steadiness checks before upload; server countersigning and a sealed evidence pack.
 4. Login, reviewer separate from capturer, and a blind-recount sample for the stated accuracy.
+
+## License
+MIT, see [LICENSE](LICENSE). It covers the code and documentation in this repository. It does not cover the Meta models, which are reached through Meta's API under Meta's own terms, or the test videos, which are kept out of the repository (`testdata/`). The Public Sans and Roboto Mono fonts are loaded from Google Fonts under their own open licence (SIL Open Font License) and are not copied into the repository.
